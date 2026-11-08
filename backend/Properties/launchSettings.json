@@ -1,0 +1,15 @@
+﻿{
+  "profiles": {
+    "SchoolAdmissionSystem": {
+      "commandName": "Project",
+      "launchBrowser": false,
+      "applicationUrl": "http://localhost:8080",
+      "environmentVariables": {
+        "ASPNETCORE_ENVIRONMENT": "Development",
+        "PORT": "8080",
+        "CORS_ORIGINS": "http://localhost:3000;http://localhost:5173",
+        "ConnectionStrings__DefaultConnection": "Host=localhost;Port=5432;Database=school_admission;Username=postgres;Password=postgres;"
+      }
+    }
+  }
+}

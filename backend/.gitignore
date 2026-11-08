@@ -1,0 +1,67 @@
+# .NET
+[Bb]in/
+[Oo]bj/
+out/
+*.user
+*.userosscache
+*.suo
+*.cache
+*.csproj.user
+*.csproj.DotSettings.user
+*.kdev*
+*.userprefs
+*.dotcover
+*.ncrunchsolution
+*.ncrunch
+*.ncrunchproject
+*.sln.ide*
+[Dd]ebug/
+[Rr]elease/
+[Rr]eleasen/
+x64/
+x86/
+[Aa][Rr][Mm]/
+[Aa][Rr][Mm]64/
+bld/
+[Bb]uild/
+[Bb]uild[Ll]og.*
+*.pid
+*.publish.xml
+
+# Visual Studio
+.vs/
+*.csproj.absolute
+*.sln.ide*
+*.user.csproj
+*.user.csproj.local
+*.ncb
+*.opensdf
+*.sdf
+*.cachefile
+*.ipch
+*.suo
+*.log
+
+# Rider
+.idea/
+*.iml
+*.ipr
+*.iws
+
+# VS Code
+.vscode/*.launch.json.settings
+.vscode/sftp.json
+
+# Test output
+TestResults/
+*.trx
+
+# EF Core migrations snapshot (optional)
+*.DotSettings.user
+
+# Environment
+.env
+*.env
+
+# Docker
+.dockerignore
