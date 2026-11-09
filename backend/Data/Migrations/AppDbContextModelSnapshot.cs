@@ -89,8 +89,9 @@ namespace SchoolAdmissionSystem.Data.Migrations
                         .HasColumnType("integer")
                         .HasColumnName("status");
 
-                    b.Property<Guid>("StudentId")
-                        .HasColumnType("uuid")
+                    b.Property<string>("StudentId")
+                        .IsRequired()
+                        .HasColumnType("text")
                         .HasColumnName("student_id");
 
                     b.Property<int>("Version")

@@ -31,7 +31,7 @@ public class SeatHoldDto
 {
     public Guid Id { get; set; }
     public Guid ClassId { get; set; }
-    public Guid StudentId { get; set; }
+    public string StudentId { get; set; } = string.Empty;
     public int Quantity { get; set; }
     public string Status { get; set; } = string.Empty;
     public DateTimeOffset HeldAt { get; set; }

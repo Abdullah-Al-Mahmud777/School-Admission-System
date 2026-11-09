@@ -10,11 +10,11 @@ namespace SchoolAdmissionSystem.Services;
 
 public interface IHoldService
 {
-    Task<SeatHoldDto> HoldSeatsAsync(Guid classId, Guid studentId, CreateHoldDto dto, TimeSpan holdDuration);
-    Task<SeatHoldDto> GetHoldByIdAsync(Guid holdId, Guid? studentId = null);
-    Task<SeatHoldDto> ConfirmHoldAsync(Guid holdId, Guid studentId);
-    Task ReleaseHoldAsync(Guid holdId, Guid? studentId = null);
-    Task<IEnumerable<UserHoldDto>> GetMyHoldsAsync(Guid studentId);
+    Task<SeatHoldDto> HoldSeatsAsync(Guid classId, string studentId, CreateHoldDto dto, TimeSpan holdDuration);
+    Task<SeatHoldDto> GetHoldByIdAsync(Guid holdId, string? studentId = null);
+    Task<SeatHoldDto> ConfirmHoldAsync(Guid holdId, string studentId);
+    Task ReleaseHoldAsync(Guid holdId, string? studentId = null);
+    Task<IEnumerable<UserHoldDto>> GetMyHoldsAsync(string studentId);
 }
 
 public class HoldService : IHoldService
@@ -24,7 +24,7 @@ public class HoldService : IHoldService
 
     public HoldService(AppDbContext db) => _db = db;
 
-    public async Task<SeatHoldDto> HoldSeatsAsync(Guid classId, Guid studentId, CreateHoldDto dto, TimeSpan holdDuration)
+    public async Task<SeatHoldDto> HoldSeatsAsync(Guid classId, string studentId, CreateHoldDto dto, TimeSpan holdDuration)
     {
         Exception? lastEx = null;
         for (var attempt = 0; attempt < MaxRetries; attempt++)
@@ -32,7 +32,6 @@ public class HoldService : IHoldService
             using var transaction = await _db.Database.BeginTransactionAsync(IsolationLevel.Serializable);
             try
             {
-                // Row lock on the class first so writers for a class are fully serialized.
                 await _db.Database.ExecuteSqlRawAsync(
                     "SELECT 1 FROM \"classes\" WHERE id = @p0 FOR UPDATE", classId);
 
@@ -84,18 +83,18 @@ public class HoldService : IHoldService
         throw new InvalidOperationException("Failed to place seat hold after retries.", lastEx);
     }
 
-    public async Task<SeatHoldDto> GetHoldByIdAsync(Guid holdId, Guid? studentId = null)
+    public async Task<SeatHoldDto> GetHoldByIdAsync(Guid holdId, string? studentId = null)
     {
         var query = _db.SeatHolds.AsNoTracking().Where(h => h.Id == holdId);
         if (studentId is not null)
-            query = query.Where(h => h.StudentId == studentId.Value);
+            query = query.Where(h => h.StudentId == studentId);
         var hold = await query.FirstOrDefaultAsync();
         if (hold == null)
             throw new NotFoundException($"Hold {holdId} not found.");
         return ToDto(hold);
     }
 
-    public async Task<SeatHoldDto> ConfirmHoldAsync(Guid holdId, Guid studentId)
+    public async Task<SeatHoldDto> ConfirmHoldAsync(Guid holdId, string studentId)
     {
         Exception? lastEx = null;
         for (var attempt = 0; attempt < MaxRetries; attempt++)
@@ -113,7 +112,6 @@ public class HoldService : IHoldService
                 if (hold.ExpiresAt <= DateTimeOffset.UtcNow)
                     throw new ConflictException("Hold has expired.");
 
-                // Lock the class row to preserve the held + confirmed <= totalSeats invariant.
                 await _db.Database.ExecuteSqlRawAsync(
                     "SELECT 1 FROM \"classes\" WHERE id = @p0 FOR UPDATE", hold.ClassId);
 
@@ -140,7 +138,7 @@ public class HoldService : IHoldService
         throw new InvalidOperationException("Failed to confirm hold after retries.", lastEx);
     }
 
-    public async Task ReleaseHoldAsync(Guid holdId, Guid? studentId = null)
+    public async Task ReleaseHoldAsync(Guid holdId, string? studentId = null)
     {
         using var transaction = await _db.Database.BeginTransactionAsync(IsolationLevel.Serializable);
         try
@@ -148,7 +146,7 @@ public class HoldService : IHoldService
             var hold = await _db.SeatHolds.FirstOrDefaultAsync(h => h.Id == holdId);
             if (hold == null)
                 throw new NotFoundException($"Hold {holdId} not found.");
-            if (studentId is not null && hold.StudentId != studentId.Value)
+            if (studentId is not null && hold.StudentId != studentId)
                 throw new BadRequestException("Hold belongs to a different student.");
             if (hold.Status == HoldStatus.Confirmed)
                 throw new ConflictException("Confirmed holds cannot be released.");
@@ -175,7 +173,7 @@ public class HoldService : IHoldService
         }
     }
 
-    public async Task<IEnumerable<UserHoldDto>> GetMyHoldsAsync(Guid studentId)
+    public async Task<IEnumerable<UserHoldDto>> GetMyHoldsAsync(string studentId)
     {
         return await _db.SeatHolds
             .Where(h => h.StudentId == studentId)

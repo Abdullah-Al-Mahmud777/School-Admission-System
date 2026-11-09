@@ -12,7 +12,7 @@ public class SeatHold
     public Guid ClassId { get; set; }
 
     [Required]
-    public Guid StudentId { get; set; }
+    public string StudentId { get; set; } = string.Empty;
 
     [Required]
     public int Quantity { get; set; }

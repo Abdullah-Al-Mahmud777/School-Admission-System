@@ -40,6 +40,6 @@ app.UseMiddleware<ErrorHandlingMiddleware>();
 app.UseCors("AllowFrontend");
 app.MapControllers();
 
-// Listen on port 8080 by default (overridable via the PORT environment variable, e.g. Docker).
-var port = Environment.GetEnvironmentVariable("PORT") ?? "8080";
+// Listen on port 5001 by default (overridable via the PORT environment variable, e.g. Docker).
+var port = Environment.GetEnvironmentVariable("PORT") ?? "5001";
 app.Run($"http://0.0.0.0:{port}");
