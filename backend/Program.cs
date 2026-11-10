@@ -16,6 +16,7 @@ builder.Services.AddDbContext<AppDbContext>(options =>
 
 builder.Services.AddScoped<IClassService, ClassService>();
 builder.Services.AddScoped<IHoldService, HoldService>();
+builder.Services.AddHostedService<HoldExpiryWorker>();
 
 builder.Services.AddControllers()
     .AddJsonOptions(options =>

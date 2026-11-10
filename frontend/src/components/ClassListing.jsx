@@ -1,5 +1,41 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { api, getStudentId, clearStudentId } from '../api';
+
+function formatRemaining(ms) {
+  const totalSeconds = Math.max(0, Math.ceil(ms / 1000));
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+  return `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
+}
+
+function HoldCountdown({ expiresAt, onExpire }) {
+  const [remaining, setRemaining] = useState(() => new Date(expiresAt).getTime() - Date.now());
+  const onExpireRef = useRef(onExpire);
+
+  useEffect(() => {
+    onExpireRef.current = onExpire;
+  }, [onExpire]);
+
+  useEffect(() => {
+    let lastNotified = 0;
+    const id = setInterval(() => {
+      const ms = new Date(expiresAt).getTime() - Date.now();
+      setRemaining(ms);
+      if (ms <= 0 && Date.now() - lastNotified > 3000) {
+        lastNotified = Date.now();
+        onExpireRef.current?.();
+      }
+    }, 1000);
+    return () => clearInterval(id);
+  }, [expiresAt]);
+
+  const isExpired = remaining <= 0;
+  return (
+    <span className={isExpired ? 'countdown countdown-expired' : 'countdown'}>
+      {formatRemaining(remaining)}
+    </span>
+  );
+}
 
 export default function ClassListing({ onSignOut }) {
   const [classes, setClasses] = useState([]);
@@ -84,6 +120,19 @@ export default function ClassListing({ onSignOut }) {
       await loadHolds();
     } catch (err) {
       setError(err.message || 'Failed to release hold.');
+    }
+  };
+
+  const refreshInFlight = useRef(false);
+
+  const handleHoldExpired = async () => {
+    if (refreshInFlight.current) return;
+    refreshInFlight.current = true;
+    try {
+      await loadClasses();
+      await loadHolds();
+    } finally {
+      refreshInFlight.current = false;
     }
   };
 
@@ -227,7 +276,10 @@ export default function ClassListing({ onSignOut }) {
                     <div className="hold-info">
                       <p><strong>Class:</strong> {hold.class_name || hold.class_id}</p>
                       <p><strong>Quantity:</strong> {hold.quantity}</p>
-                      <p><strong>Status:</strong> <span className={`status-${hold.status.toLowerCase()}`}>{hold.status}</span></p>
+                      <p><strong>Status:</strong> <span className={`status-${hold.status.toLowerCase()}`}>{hold.status.toUpperCase()}</span></p>
+                      {hold.status === 'Held' && (
+                        <p><strong>Time Remaining:</strong> <HoldCountdown expiresAt={hold.expires_at} onExpire={handleHoldExpired} /></p>
+                      )}
                       <p><strong>Held At:</strong> {new Date(hold.held_at).toLocaleString()}</p>
                       <p><strong>Expires At:</strong> {new Date(hold.expires_at).toLocaleString()}</p>
                       {hold.confirmed_at && <p><strong>Confirmed At:</strong> {new Date(hold.confirmed_at).toLocaleString()}</p>}

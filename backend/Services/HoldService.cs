@@ -15,6 +15,7 @@ public interface IHoldService
     Task<SeatHoldDto> ConfirmHoldAsync(Guid holdId, string studentId);
     Task ReleaseHoldAsync(Guid holdId, string? studentId = null);
     Task<IEnumerable<UserHoldDto>> GetMyHoldsAsync(string studentId);
+    Task<int> ExpireHoldsAsync();
 }
 
 public class HoldService : IHoldService
@@ -175,12 +176,11 @@ public class HoldService : IHoldService
 
     public async Task<IEnumerable<UserHoldDto>> GetMyHoldsAsync(string studentId)
     {
-        var now = DateTimeOffset.UtcNow;
+        await ExpireHoldsAsync();
+
         var holds = await _db.SeatHolds
             .AsNoTracking()
-            .Where(h => h.StudentId == studentId
-                && (h.Status == HoldStatus.Confirmed
-                    || (h.Status == HoldStatus.Held && h.ExpiresAt > now)))
+            .Where(h => h.StudentId == studentId && h.Status != HoldStatus.Released)
             .OrderByDescending(h => h.HeldAt)
             .Select(h => new UserHoldDto
             {
@@ -196,27 +196,37 @@ public class HoldService : IHoldService
             })
             .ToListAsync();
 
-        // One application per class: combine repeated holds and drop expired/released records.
+        // One application per class, preferring an active application over an expired one.
         return holds
             .GroupBy(h => h.ClassId)
             .Select(group =>
             {
                 var confirmed = group.Where(h => h.Status == nameof(HoldStatus.Confirmed)).ToList();
                 var held = group.Where(h => h.Status == nameof(HoldStatus.Held)).ToList();
+                var expired = group.Where(h => h.Status == nameof(HoldStatus.Expired)).ToList();
+                var isConfirmed = confirmed.Count > 0;
+                var isHeld = held.Count > 0;
+
                 var primary = confirmed
                     .OrderByDescending(h => h.ConfirmedAt ?? h.HeldAt)
                     .FirstOrDefault()
-                    ?? held.OrderByDescending(h => h.HeldAt).First();
-                var isConfirmed = confirmed.Count > 0;
+                    ?? held.OrderByDescending(h => h.HeldAt).FirstOrDefault()
+                    ?? expired.OrderByDescending(h => h.HeldAt).First();
+
+                var active = isConfirmed ? confirmed.Concat(held).ToList() : isHeld ? held : expired;
 
                 return new UserHoldDto
                 {
                     Id = primary.Id,
                     ClassId = primary.ClassId,
                     StudentId = primary.StudentId,
-                    Quantity = group.Sum(h => h.Quantity),
-                    Status = isConfirmed ? nameof(HoldStatus.Confirmed) : nameof(HoldStatus.Held),
-                    HeldAt = group.Min(h => h.HeldAt),
+                    Quantity = isConfirmed
+                        ? confirmed.Sum(h => h.Quantity) + held.Sum(h => h.Quantity)
+                        : isHeld ? held.Sum(h => h.Quantity) : primary.Quantity,
+                    Status = isConfirmed
+                        ? nameof(HoldStatus.Confirmed)
+                        : isHeld ? nameof(HoldStatus.Held) : nameof(HoldStatus.Expired),
+                    HeldAt = active.Min(h => h.HeldAt),
                     ExpiresAt = primary.ExpiresAt,
                     ConfirmedAt = isConfirmed ? confirmed.Max(h => h.ConfirmedAt) : null,
                     ClassName = primary.ClassName
@@ -224,6 +234,16 @@ public class HoldService : IHoldService
             })
             .OrderByDescending(h => h.HeldAt)
             .ToList();
+    }
+
+    public async Task<int> ExpireHoldsAsync()
+    {
+        var now = DateTimeOffset.UtcNow;
+        return await _db.SeatHolds
+            .Where(h => h.Status == HoldStatus.Held && h.ExpiresAt <= now)
+            .ExecuteUpdateAsync(setters => setters
+                .SetProperty(h => h.Status, HoldStatus.Expired)
+                .SetProperty(h => h.Version, h => h.Version + 1));
     }
 
     private static SeatHoldDto ToDto(SeatHold h) => new()

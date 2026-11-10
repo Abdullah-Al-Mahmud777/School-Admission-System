@@ -1,4 +1,6 @@
 using System.Text.Json;
+using Microsoft.AspNetCore.Mvc;
+using Microsoft.Extensions.Options;
 using SchoolAdmissionSystem.DTOs;
 using SchoolAdmissionSystem.Exceptions;
 
@@ -9,7 +11,7 @@ public class ErrorHandlingMiddleware
     private readonly RequestDelegate _next;
     public ErrorHandlingMiddleware(RequestDelegate next) => _next = next;
 
-    public async Task InvokeAsync(HttpContext context)
+    public async Task InvokeAsync(HttpContext context, IOptions<JsonOptions> jsonOptions)
     {
         try
         {
@@ -25,7 +27,7 @@ public class ErrorHandlingMiddleware
                 Message = ex.Message,
                 StatusCode = ex.StatusCode
             };
-            await context.Response.WriteAsync(JsonSerializer.Serialize(error));
+            await context.Response.WriteAsync(JsonSerializer.Serialize(error, jsonOptions.Value.JsonSerializerOptions));
         }
         catch (Exception ex)
         {
@@ -37,7 +39,7 @@ public class ErrorHandlingMiddleware
                 Message = ex.Message,
                 StatusCode = 500
             };
-            await context.Response.WriteAsync(JsonSerializer.Serialize(error));
+            await context.Response.WriteAsync(JsonSerializer.Serialize(error, jsonOptions.Value.JsonSerializerOptions));
         }
     }
 }

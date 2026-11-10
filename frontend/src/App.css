@@ -848,6 +848,21 @@ a:hover {
 .status-released { color: #64748b; }
 .status-expired { color: #ef4444; }
 
+.countdown {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 6px;
+  background: #eff6ff;
+  color: #2563eb;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.countdown-expired {
+  background: #fef2f2;
+  color: #ef4444;
+}
+
 .class-footer {
   background: #f8fafc;
   padding: 16px 32px;
