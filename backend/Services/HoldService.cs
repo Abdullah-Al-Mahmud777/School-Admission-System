@@ -13,6 +13,7 @@ public interface IHoldService
     Task<SeatHoldDto> HoldSeatsAsync(Guid classId, string studentId, CreateHoldDto dto, TimeSpan holdDuration);
     Task<SeatHoldDto> GetHoldByIdAsync(Guid holdId, string? studentId = null);
     Task<SeatHoldDto> ConfirmHoldAsync(Guid holdId, string studentId);
+    Task<SeatHoldDto> PayHoldAsync(Guid holdId, string studentId);
     Task ReleaseHoldAsync(Guid holdId, string? studentId = null);
     Task<IEnumerable<UserHoldDto>> GetMyHoldsAsync(string studentId);
     Task<int> ExpireHoldsAsync();
@@ -86,6 +87,8 @@ public class HoldService : IHoldService
 
     public async Task<SeatHoldDto> GetHoldByIdAsync(Guid holdId, string? studentId = null)
     {
+        await ExpireHoldsAsync();
+
         var query = _db.SeatHolds.AsNoTracking().Where(h => h.Id == holdId);
         if (studentId is not null)
             query = query.Where(h => h.StudentId == studentId);
@@ -139,6 +142,58 @@ public class HoldService : IHoldService
         throw new InvalidOperationException("Failed to confirm hold after retries.", lastEx);
     }
 
+    public async Task<SeatHoldDto> PayHoldAsync(Guid holdId, string studentId)
+    {
+        await ExpireHoldsAsync();
+
+        using var transaction = await _db.Database.BeginTransactionAsync(IsolationLevel.Serializable);
+        try
+        {
+            await _db.Database.ExecuteSqlRawAsync(
+                "SELECT 1 FROM \"seat_holds\" WHERE id = @p0 FOR UPDATE", holdId);
+
+            var hold = await _db.SeatHolds.FirstOrDefaultAsync(h => h.Id == holdId);
+            if (hold == null)
+                throw new NotFoundException($"Hold {holdId} not found.");
+            if (hold.StudentId != studentId)
+                throw new BadRequestException("Hold belongs to a different student.");
+            if (hold.PaymentStatus == PaymentStatus.Paid)
+                throw new ConflictException("Admission fee has already been paid.");
+            if (hold.Status == HoldStatus.Released)
+                throw new ConflictException("Released holds cannot be paid.");
+
+            var now = DateTimeOffset.UtcNow;
+            if (hold.Status == HoldStatus.Expired
+                || (hold.Status == HoldStatus.Held && hold.ExpiresAt <= now))
+            {
+                throw new ConflictException("Seat hold has expired. Payment is no longer available.");
+            }
+
+            if (hold.Status != HoldStatus.Held && hold.Status != HoldStatus.Confirmed)
+                throw new ConflictException($"Hold is {hold.Status} and cannot be paid.");
+
+            if (hold.Status == HoldStatus.Held)
+            {
+                hold.Status = HoldStatus.Confirmed;
+                hold.ConfirmedAt = now;
+            }
+
+            hold.PaymentStatus = PaymentStatus.Paid;
+            hold.AdmissionStatus = AdmissionStatus.Admitted;
+            hold.PaidAt = now;
+            hold.Version++;
+
+            await _db.SaveChangesAsync();
+            await transaction.CommitAsync();
+            return ToDto(hold);
+        }
+        catch
+        {
+            await transaction.RollbackAsync();
+            throw;
+        }
+    }
+
     public async Task ReleaseHoldAsync(Guid holdId, string? studentId = null)
     {
         using var transaction = await _db.Database.BeginTransactionAsync(IsolationLevel.Serializable);
@@ -149,6 +204,8 @@ public class HoldService : IHoldService
                 throw new NotFoundException($"Hold {holdId} not found.");
             if (studentId is not null && hold.StudentId != studentId)
                 throw new BadRequestException("Hold belongs to a different student.");
+            if (hold.PaymentStatus == PaymentStatus.Paid || hold.AdmissionStatus == AdmissionStatus.Admitted)
+                throw new ConflictException("Paid admissions cannot be released.");
             if (hold.Status == HoldStatus.Confirmed)
                 throw new ConflictException("Confirmed holds cannot be released.");
             if (hold.Status is HoldStatus.Expired or HoldStatus.Released)
@@ -192,6 +249,9 @@ public class HoldService : IHoldService
                 HeldAt = h.HeldAt,
                 ExpiresAt = h.ExpiresAt,
                 ConfirmedAt = h.ConfirmedAt,
+                PaymentStatus = h.PaymentStatus.ToString(),
+                AdmissionStatus = h.AdmissionStatus.ToString(),
+                PaidAt = h.PaidAt,
                 ClassName = _db.Classes.Where(c => c.Id == h.ClassId).Select(c => c.Name).FirstOrDefault()!
             })
             .ToListAsync();
@@ -204,12 +264,16 @@ public class HoldService : IHoldService
                 var confirmed = group.Where(h => h.Status == nameof(HoldStatus.Confirmed)).ToList();
                 var held = group.Where(h => h.Status == nameof(HoldStatus.Held)).ToList();
                 var expired = group.Where(h => h.Status == nameof(HoldStatus.Expired)).ToList();
+                var paid = group.Where(h => h.PaymentStatus == nameof(PaymentStatus.Paid)).ToList();
                 var isConfirmed = confirmed.Count > 0;
                 var isHeld = held.Count > 0;
 
-                var primary = confirmed
-                    .OrderByDescending(h => h.ConfirmedAt ?? h.HeldAt)
+                var primary = paid
+                    .OrderByDescending(h => h.PaidAt ?? h.ConfirmedAt ?? h.HeldAt)
                     .FirstOrDefault()
+                    ?? confirmed
+                        .OrderByDescending(h => h.ConfirmedAt ?? h.HeldAt)
+                        .FirstOrDefault()
                     ?? held.OrderByDescending(h => h.HeldAt).FirstOrDefault()
                     ?? expired.OrderByDescending(h => h.HeldAt).First();
 
@@ -229,6 +293,9 @@ public class HoldService : IHoldService
                     HeldAt = active.Min(h => h.HeldAt),
                     ExpiresAt = primary.ExpiresAt,
                     ConfirmedAt = isConfirmed ? confirmed.Max(h => h.ConfirmedAt) : null,
+                    PaymentStatus = primary.PaymentStatus,
+                    AdmissionStatus = primary.AdmissionStatus,
+                    PaidAt = primary.PaidAt,
                     ClassName = primary.ClassName
                 };
             })
@@ -255,7 +322,10 @@ public class HoldService : IHoldService
         Status = h.Status.ToString(),
         HeldAt = h.HeldAt,
         ExpiresAt = h.ExpiresAt,
-        ConfirmedAt = h.ConfirmedAt
+        ConfirmedAt = h.ConfirmedAt,
+        PaymentStatus = h.PaymentStatus.ToString(),
+        AdmissionStatus = h.AdmissionStatus.ToString(),
+        PaidAt = h.PaidAt
     };
 
     private static bool IsRetryablePostgresError(DbUpdateException ex)

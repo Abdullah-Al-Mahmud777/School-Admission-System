@@ -39,6 +39,9 @@ public class AppDbContext : DbContext
             entity.Property(e => e.HeldAt).HasColumnName("held_at").IsRequired();
             entity.Property(e => e.ExpiresAt).HasColumnName("expires_at").IsRequired();
             entity.Property(e => e.ConfirmedAt).HasColumnName("confirmed_at");
+            entity.Property(e => e.PaymentStatus).HasColumnName("payment_status").IsRequired();
+            entity.Property(e => e.AdmissionStatus).HasColumnName("admission_status").IsRequired();
+            entity.Property(e => e.PaidAt).HasColumnName("paid_at");
             entity.Property(e => e.Version).HasColumnName("version").IsRequired().IsConcurrencyToken();
 
             entity.HasIndex(e => e.ClassId);

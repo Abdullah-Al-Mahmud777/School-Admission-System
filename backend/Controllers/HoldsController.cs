@@ -25,6 +25,13 @@ public class HoldsController : BaseApiController
         return Ok(hold);
     }
 
+    [HttpPost("{holdId:guid}/pay")]
+    public async Task<ActionResult<SeatHoldDto>> Pay(Guid holdId)
+    {
+        var hold = await _holdService.PayHoldAsync(holdId, StudentId);
+        return Ok(hold);
+    }
+
     [HttpDelete("{holdId:guid}")]
     public async Task<ActionResult> Release(Guid holdId)
     {

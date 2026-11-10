@@ -26,6 +26,14 @@ public class SeatHold
 
     public DateTimeOffset? ConfirmedAt { get; set; }
 
+    [Required]
+    public PaymentStatus PaymentStatus { get; set; } = PaymentStatus.Unpaid;
+
+    [Required]
+    public AdmissionStatus AdmissionStatus { get; set; } = AdmissionStatus.Pending;
+
+    public DateTimeOffset? PaidAt { get; set; }
+
     [ConcurrencyCheck]
     public int Version { get; set; }
 

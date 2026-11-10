@@ -41,6 +41,9 @@ public class SeatHoldDto
     public DateTimeOffset HeldAt { get; set; }
     public DateTimeOffset ExpiresAt { get; set; }
     public DateTimeOffset? ConfirmedAt { get; set; }
+    public string PaymentStatus { get; set; } = string.Empty;
+    public string AdmissionStatus { get; set; } = string.Empty;
+    public DateTimeOffset? PaidAt { get; set; }
 }
 
 public class UserHoldDto : SeatHoldDto

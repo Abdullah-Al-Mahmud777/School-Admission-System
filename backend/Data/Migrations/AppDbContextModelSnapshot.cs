@@ -71,6 +71,10 @@ namespace SchoolAdmissionSystem.Data.Migrations
                         .HasColumnName("id")
                         .HasDefaultValueSql("gen_random_uuid()");
 
+                    b.Property<int>("AdmissionStatus")
+                        .HasColumnType("integer")
+                        .HasColumnName("admission_status");
+
                     b.Property<Guid>("ClassId")
                         .HasColumnType("uuid")
                         .HasColumnName("class_id");
@@ -86,6 +90,14 @@ namespace SchoolAdmissionSystem.Data.Migrations
                     b.Property<DateTimeOffset>("HeldAt")
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("held_at");
+
+                    b.Property<DateTimeOffset?>("PaidAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("paid_at");
+
+                    b.Property<int>("PaymentStatus")
+                        .HasColumnType("integer")
+                        .HasColumnName("payment_status");
 
                     b.Property<int>("Quantity")
                         .HasColumnType("integer")

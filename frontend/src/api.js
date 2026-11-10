@@ -1,4 +1,4 @@
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8080';
+const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5001';
 
 const STUDENT_ID_KEY = 'school_admission_student_id';
 
@@ -61,6 +61,7 @@ export const api = {
     }),
   getHold: (holdId) => request(`/holds/${holdId}`),
   confirmHold: (holdId) => request(`/holds/${holdId}/confirm`, { method: 'POST' }),
+  payHold: (holdId) => request(`/holds/${holdId}/pay`, { method: 'POST' }),
   releaseHold: (holdId) => request(`/holds/${holdId}`, { method: 'DELETE' }),
   getMyHolds: () => request('/me/holds'),
 };

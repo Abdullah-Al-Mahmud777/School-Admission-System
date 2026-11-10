@@ -43,6 +43,8 @@ export default function ClassListing({ onSignOut }) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [applyingClassId, setApplyingClassId] = useState(null);
+  const [payingHoldId, setPayingHoldId] = useState(null);
+  const [now, setNow] = useState(() => Date.now());
 
   const loadClasses = async () => {
     try {
@@ -89,6 +91,11 @@ export default function ClassListing({ onSignOut }) {
     };
   }, []);
 
+  useEffect(() => {
+    const id = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(id);
+  }, []);
+
   const handleApplyNow = async (classId) => {
     setApplyingClassId(classId);
     setError('');
@@ -120,6 +127,21 @@ export default function ClassListing({ onSignOut }) {
       await loadHolds();
     } catch (err) {
       setError(err.message || 'Failed to release hold.');
+    }
+  };
+
+  const handlePay = async (holdId) => {
+    setPayingHoldId(holdId);
+    setError('');
+    try {
+      await api.payHold(holdId);
+      await loadClasses();
+      await loadHolds();
+    } catch (err) {
+      setError(err.message || 'Failed to process admission fee.');
+      await loadHolds();
+    } finally {
+      setPayingHoldId(null);
     }
   };
 
@@ -271,29 +293,58 @@ export default function ClassListing({ onSignOut }) {
               <div className="empty">No active applications.</div>
             ) : (
               <div className="holds-list">
-                {holds.map((hold) => (
-                  <div key={hold.id} className="hold-card">
-                    <div className="hold-info">
-                      <p><strong>Class:</strong> {hold.class_name || hold.class_id}</p>
-                      <p><strong>Quantity:</strong> {hold.quantity}</p>
-                      <p><strong>Status:</strong> <span className={`status-${hold.status.toLowerCase()}`}>{hold.status.toUpperCase()}</span></p>
-                      {hold.status === 'Held' && (
-                        <p><strong>Time Remaining:</strong> <HoldCountdown expiresAt={hold.expires_at} onExpire={handleHoldExpired} /></p>
-                      )}
-                      <p><strong>Held At:</strong> {new Date(hold.held_at).toLocaleString()}</p>
-                      <p><strong>Expires At:</strong> {new Date(hold.expires_at).toLocaleString()}</p>
-                      {hold.confirmed_at && <p><strong>Confirmed At:</strong> {new Date(hold.confirmed_at).toLocaleString()}</p>}
+                {holds.map((hold) => {
+                  const holdStatus = hold.status || 'Unknown';
+                  const paymentStatus = hold.payment_status || 'Unpaid';
+                  const admissionStatus = hold.admission_status || 'Pending';
+                  const isPaid = paymentStatus === 'Paid';
+                  const isPayableStatus = holdStatus === 'Held' || holdStatus === 'Confirmed';
+                  const isPastExpiry = new Date(hold.expires_at).getTime() <= now;
+                  const holdExpired =
+                    !isPaid &&
+                    (holdStatus === 'Expired' || (isPayableStatus && isPastExpiry));
+                  const canPay = !isPaid && isPayableStatus && !holdExpired;
+
+                  return (
+                    <div key={hold.id} className="hold-card">
+                      <div className="hold-info">
+                        <p><strong>Class:</strong> {hold.class_name || hold.class_id}</p>
+                        <p><strong>Quantity:</strong> {hold.quantity}</p>
+                        <p><strong>Status:</strong> <span className={`status-${holdStatus.toLowerCase()}`}>{holdStatus.toUpperCase()}</span></p>
+                        {holdStatus === 'Held' && (
+                          <p><strong>Time Remaining:</strong> <HoldCountdown expiresAt={hold.expires_at} onExpire={handleHoldExpired} /></p>
+                        )}
+                        <p><strong>Payment:</strong> <span className={`payment-${paymentStatus.toLowerCase()}`}>{paymentStatus.toUpperCase()}</span></p>
+                        <p><strong>Admission:</strong> <span className={`admission-${admissionStatus.toLowerCase()}`}>{admissionStatus.toUpperCase()}</span></p>
+                        <p><strong>Held At:</strong> {new Date(hold.held_at).toLocaleString()}</p>
+                        <p><strong>Expires At:</strong> {new Date(hold.expires_at).toLocaleString()}</p>
+                        {hold.confirmed_at && <p><strong>Confirmed At:</strong> {new Date(hold.confirmed_at).toLocaleString()}</p>}
+                        {hold.paid_at && <p><strong>Paid At:</strong> {new Date(hold.paid_at).toLocaleString()}</p>}
+                      </div>
+                      <div className="hold-actions">
+                        {holdStatus === 'Held' && (
+                          <>
+                            <button onClick={() => handleConfirm(hold.id)} className="confirm-btn">Confirm</button>
+                            <button onClick={() => handleRelease(hold.id)} className="release-btn">Release</button>
+                          </>
+                        )}
+                        {isPaid ? (
+                          <span className="paid-chip">PAID</span>
+                        ) : canPay ? (
+                          <button
+                            onClick={() => handlePay(hold.id)}
+                            disabled={payingHoldId === hold.id}
+                            className="pay-btn"
+                          >
+                            {payingHoldId === hold.id ? 'Processing…' : 'Pay Admission Fee'}
+                          </button>
+                        ) : holdExpired ? (
+                          <button disabled className="pay-btn pay-disabled">Payment Expired</button>
+                        ) : null}
+                      </div>
                     </div>
-                    <div className="hold-actions">
-                      {hold.status === 'Held' && (
-                        <>
-                          <button onClick={() => handleConfirm(hold.id)} className="confirm-btn">Confirm</button>
-                          <button onClick={() => handleRelease(hold.id)} className="release-btn">Release</button>
-                        </>
-                      )}
-                    </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             )}
           </section>
