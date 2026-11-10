@@ -13,6 +13,10 @@ public class SchoolClass
     public string Name { get; set; } = string.Empty;
 
     [Required]
+    [MaxLength(50)]
+    public string Shift { get; set; } = string.Empty;
+
+    [Required]
     public int TotalSeats { get; set; }
 
     public DateTimeOffset CreatedAt { get; set; }

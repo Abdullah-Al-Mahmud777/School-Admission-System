@@ -10,6 +10,7 @@ public class ErrorResponse
 public class CreateClassDto
 {
     public string Name { get; set; } = string.Empty;
+    public string Shift { get; set; } = string.Empty;
     public int TotalSeats { get; set; }
 }
 
@@ -17,8 +18,11 @@ public class ClassDto
 {
     public Guid Id { get; set; }
     public string Name { get; set; } = string.Empty;
+    public string Shift { get; set; } = string.Empty;
     public int TotalSeats { get; set; }
-    public int AvailableSeats { get; set; }
+    public int HeldSeats { get; set; }
+    public int ConfirmedSeats { get; set; }
+    public int AvailableSeats => TotalSeats - HeldSeats - ConfirmedSeats;
     public DateTimeOffset CreatedAt { get; set; }
 }
 

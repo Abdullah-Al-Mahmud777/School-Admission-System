@@ -23,13 +23,14 @@ public class ClassService : IClassService
         {
             Id = Guid.NewGuid(),
             Name = dto.Name.Trim(),
+            Shift = dto.Shift.Trim(),
             TotalSeats = dto.TotalSeats,
             CreatedAt = DateTimeOffset.UtcNow,
             Version = 1
         };
         _db.Classes.Add(entity);
         await _db.SaveChangesAsync();
-        return ToDto(entity, 0);
+        return ToDto(entity, 0, 0);
     }
 
     public async Task<IEnumerable<ClassDto>> GetAllClassesAsync()
@@ -37,15 +38,20 @@ public class ClassService : IClassService
         var now = DateTimeOffset.UtcNow;
         return await _db.Classes
             .OrderBy(c => c.Name)
+            .ThenBy(c => c.Shift)
             .Select(c => new ClassDto
             {
                 Id = c.Id,
                 Name = c.Name,
+                Shift = c.Shift,
                 TotalSeats = c.TotalSeats,
-                AvailableSeats = c.TotalSeats - _db.SeatHolds
+                HeldSeats = _db.SeatHolds
                     .Where(h => h.ClassId == c.Id
-                        && (h.Status == HoldStatus.Confirmed
-                            || (h.Status == HoldStatus.Held && h.ExpiresAt > now)))
+                        && h.Status == HoldStatus.Held
+                        && h.ExpiresAt > now)
+                    .Sum(h => (int?)h.Quantity) ?? 0,
+                ConfirmedSeats = _db.SeatHolds
+                    .Where(h => h.ClassId == c.Id && h.Status == HoldStatus.Confirmed)
                     .Sum(h => (int?)h.Quantity) ?? 0,
                 CreatedAt = c.CreatedAt
             })
@@ -59,18 +65,23 @@ public class ClassService : IClassService
         if (c == null) return null;
         var held = await _db.SeatHolds
             .Where(h => h.ClassId == classId
-                && (h.Status == HoldStatus.Confirmed
-                    || (h.Status == HoldStatus.Held && h.ExpiresAt > now)))
+                && h.Status == HoldStatus.Held
+                && h.ExpiresAt > now)
             .SumAsync(h => (int?)h.Quantity) ?? 0;
-        return ToDto(c, held);
+        var confirmed = await _db.SeatHolds
+            .Where(h => h.ClassId == classId && h.Status == HoldStatus.Confirmed)
+            .SumAsync(h => (int?)h.Quantity) ?? 0;
+        return ToDto(c, held, confirmed);
     }
 
-    private static ClassDto ToDto(SchoolClass c, int held) => new()
+    private static ClassDto ToDto(SchoolClass c, int held, int confirmed) => new()
     {
         Id = c.Id,
         Name = c.Name,
+        Shift = c.Shift,
         TotalSeats = c.TotalSeats,
-        AvailableSeats = c.TotalSeats - held,
+        HeldSeats = held,
+        ConfirmedSeats = confirmed,
         CreatedAt = c.CreatedAt
     };
 }

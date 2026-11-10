@@ -20,6 +20,7 @@ public class AppDbContext : DbContext
             entity.HasKey(e => e.Id);
             entity.Property(e => e.Id).HasColumnName("id").ValueGeneratedOnAdd().HasDefaultValueSql("gen_random_uuid()");
             entity.Property(e => e.Name).HasColumnName("name").IsRequired().HasMaxLength(200);
+            entity.Property(e => e.Shift).HasColumnName("shift").IsRequired().HasMaxLength(50);
             entity.Property(e => e.TotalSeats).HasColumnName("total_seats").IsRequired();
             entity.Property(e => e.CreatedAt).HasColumnName("created_at").IsRequired();
             entity.Property(e => e.Version).HasColumnName("version").IsRequired().IsConcurrencyToken();

@@ -175,8 +175,12 @@ public class HoldService : IHoldService
 
     public async Task<IEnumerable<UserHoldDto>> GetMyHoldsAsync(string studentId)
     {
-        return await _db.SeatHolds
-            .Where(h => h.StudentId == studentId)
+        var now = DateTimeOffset.UtcNow;
+        var holds = await _db.SeatHolds
+            .AsNoTracking()
+            .Where(h => h.StudentId == studentId
+                && (h.Status == HoldStatus.Confirmed
+                    || (h.Status == HoldStatus.Held && h.ExpiresAt > now)))
             .OrderByDescending(h => h.HeldAt)
             .Select(h => new UserHoldDto
             {
@@ -191,6 +195,35 @@ public class HoldService : IHoldService
                 ClassName = _db.Classes.Where(c => c.Id == h.ClassId).Select(c => c.Name).FirstOrDefault()!
             })
             .ToListAsync();
+
+        // One application per class: combine repeated holds and drop expired/released records.
+        return holds
+            .GroupBy(h => h.ClassId)
+            .Select(group =>
+            {
+                var confirmed = group.Where(h => h.Status == nameof(HoldStatus.Confirmed)).ToList();
+                var held = group.Where(h => h.Status == nameof(HoldStatus.Held)).ToList();
+                var primary = confirmed
+                    .OrderByDescending(h => h.ConfirmedAt ?? h.HeldAt)
+                    .FirstOrDefault()
+                    ?? held.OrderByDescending(h => h.HeldAt).First();
+                var isConfirmed = confirmed.Count > 0;
+
+                return new UserHoldDto
+                {
+                    Id = primary.Id,
+                    ClassId = primary.ClassId,
+                    StudentId = primary.StudentId,
+                    Quantity = group.Sum(h => h.Quantity),
+                    Status = isConfirmed ? nameof(HoldStatus.Confirmed) : nameof(HoldStatus.Held),
+                    HeldAt = group.Min(h => h.HeldAt),
+                    ExpiresAt = primary.ExpiresAt,
+                    ConfirmedAt = isConfirmed ? confirmed.Max(h => h.ConfirmedAt) : null,
+                    ClassName = primary.ClassName
+                };
+            })
+            .OrderByDescending(h => h.HeldAt)
+            .ToList();
     }
 
     private static SeatHoldDto ToDto(SeatHold h) => new()

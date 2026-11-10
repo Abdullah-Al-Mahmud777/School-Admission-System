@@ -40,6 +40,12 @@ namespace SchoolAdmissionSystem.Data.Migrations
                         .HasColumnType("character varying(200)")
                         .HasColumnName("name");
 
+                    b.Property<string>("Shift")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("character varying(50)")
+                        .HasColumnName("shift");
+
                     b.Property<int>("TotalSeats")
                         .HasColumnType("integer")
                         .HasColumnName("total_seats");

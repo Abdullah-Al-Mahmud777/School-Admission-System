@@ -1,3 +1,4 @@
+using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
 using Npgsql.EntityFrameworkCore.PostgreSQL;
 using SchoolAdmissionSystem.Data;
@@ -16,12 +17,16 @@ builder.Services.AddDbContext<AppDbContext>(options =>
 builder.Services.AddScoped<IClassService, ClassService>();
 builder.Services.AddScoped<IHoldService, HoldService>();
 
-builder.Services.AddControllers();
+builder.Services.AddControllers()
+    .AddJsonOptions(options =>
+    {
+        options.JsonSerializerOptions.PropertyNamingPolicy = JsonNamingPolicy.SnakeCaseLower;
+    });
 
 // CORS so a React 18+ frontend on a different origin can call this API.
 var allowedOrigins = Environment.GetEnvironmentVariable("CORS_ORIGINS")?
     .Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
-    ?? new[] { "http://localhost:3000", "http://localhost:5173" };
+    ?? new[] { "http://localhost:3000", "http://localhost:5173", "http://localhost:5174" };
 
 builder.Services.AddCors(options =>
 {
@@ -37,6 +42,7 @@ builder.Services.AddCors(options =>
 var app = builder.Build();
 
 app.UseMiddleware<ErrorHandlingMiddleware>();
+app.UseRouting();
 app.UseCors("AllowFrontend");
 app.MapControllers();
 
