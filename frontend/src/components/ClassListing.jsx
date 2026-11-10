@@ -44,6 +44,8 @@ export default function ClassListing({ onSignOut }) {
   const [error, setError] = useState('');
   const [applyingClassId, setApplyingClassId] = useState(null);
   const [payingHoldId, setPayingHoldId] = useState(null);
+  const [cancelTarget, setCancelTarget] = useState(null);
+  const [cancellingHoldId, setCancellingHoldId] = useState(null);
   const [now, setNow] = useState(() => Date.now());
 
   const loadClasses = async () => {
@@ -142,6 +144,25 @@ export default function ClassListing({ onSignOut }) {
       await loadHolds();
     } finally {
       setPayingHoldId(null);
+    }
+  };
+
+  const handleCancelConfirm = async () => {
+    if (!cancelTarget) return;
+    const holdId = cancelTarget.id;
+    setCancellingHoldId(holdId);
+    setError('');
+    try {
+      await api.cancelHold(holdId);
+      setCancelTarget(null);
+      await loadClasses();
+      await loadHolds();
+    } catch (err) {
+      setError(err.message || 'Failed to cancel admission.');
+      setCancelTarget(null);
+      await loadHolds();
+    } finally {
+      setCancellingHoldId(null);
     }
   };
 
@@ -320,6 +341,7 @@ export default function ClassListing({ onSignOut }) {
                         <p><strong>Expires At:</strong> {new Date(hold.expires_at).toLocaleString()}</p>
                         {hold.confirmed_at && <p><strong>Confirmed At:</strong> {new Date(hold.confirmed_at).toLocaleString()}</p>}
                         {hold.paid_at && <p><strong>Paid At:</strong> {new Date(hold.paid_at).toLocaleString()}</p>}
+                        {hold.cancelled_at && <p><strong>Cancelled At:</strong> {new Date(hold.cancelled_at).toLocaleString()}</p>}
                       </div>
                       <div className="hold-actions">
                         {holdStatus === 'Held' && (
@@ -341,6 +363,15 @@ export default function ClassListing({ onSignOut }) {
                         ) : holdExpired ? (
                           <button disabled className="pay-btn pay-disabled">Payment Expired</button>
                         ) : null}
+                        {holdStatus === 'Confirmed' && (
+                          <button
+                            onClick={() => setCancelTarget(hold)}
+                            disabled={!!cancellingHoldId}
+                            className="cancel-btn"
+                          >
+                            Cancel Admission
+                          </button>
+                        )}
                       </div>
                     </div>
                   );
@@ -354,6 +385,47 @@ export default function ClassListing({ onSignOut }) {
           <p>&copy; 2026 School Admission System. All rights reserved.</p>
         </footer>
       </div>
+
+      {cancelTarget && (
+        <div
+          className="modal-overlay"
+          onClick={() => { if (!cancellingHoldId) setCancelTarget(null); }}
+        >
+          <div
+            className="modal"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="cancel-modal-title"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h3 id="cancel-modal-title" className="modal-title">Cancel Admission?</h3>
+            <p className="modal-body">
+              You are about to cancel your admission for{' '}
+              <strong>{cancelTarget.class_name || cancelTarget.class_id}</strong>.
+              {cancelTarget.payment_status === 'Paid'
+                ? ' Your seat will be released and your admission fee will be refunded.'
+                : ' Your held seat will be released.'}{' '}
+              This action cannot be undone.
+            </p>
+            <div className="modal-actions">
+              <button
+                className="modal-btn modal-btn-secondary"
+                onClick={() => setCancelTarget(null)}
+                disabled={!!cancellingHoldId}
+              >
+                Keep Admission
+              </button>
+              <button
+                className="modal-btn modal-btn-danger"
+                onClick={handleCancelConfirm}
+                disabled={!!cancellingHoldId}
+              >
+                {cancellingHoldId ? 'Cancelling…' : 'Cancel Admission'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

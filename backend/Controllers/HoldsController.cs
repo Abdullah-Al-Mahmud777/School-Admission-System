@@ -32,6 +32,13 @@ public class HoldsController : BaseApiController
         return Ok(hold);
     }
 
+    [HttpPost("{holdId:guid}/cancel")]
+    public async Task<ActionResult<SeatHoldDto>> Cancel(Guid holdId)
+    {
+        var hold = await _holdService.CancelHoldAsync(holdId, StudentId);
+        return Ok(hold);
+    }
+
     [HttpDelete("{holdId:guid}")]
     public async Task<ActionResult> Release(Guid holdId)
     {

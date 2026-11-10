@@ -22,6 +22,73 @@ namespace SchoolAdmissionSystem.Data.Migrations
 
             NpgsqlModelBuilderExtensions.UseIdentityByDefaultColumns(modelBuilder);
 
+            modelBuilder.Entity("SchoolAdmissionSystem.Models.ApplicationCancellation", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id")
+                        .HasDefaultValueSql("gen_random_uuid()");
+
+                    b.Property<DateTimeOffset>("CancelledAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("cancelled_at");
+
+                    b.Property<Guid>("ClassId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("class_id");
+
+                    b.Property<Guid>("HoldId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("hold_id");
+
+                    b.Property<int>("NewAdmissionStatus")
+                        .HasColumnType("integer")
+                        .HasColumnName("new_admission_status");
+
+                    b.Property<int>("NewHoldStatus")
+                        .HasColumnType("integer")
+                        .HasColumnName("new_hold_status");
+
+                    b.Property<int>("NewPaymentStatus")
+                        .HasColumnType("integer")
+                        .HasColumnName("new_payment_status");
+
+                    b.Property<int>("PreviousAdmissionStatus")
+                        .HasColumnType("integer")
+                        .HasColumnName("previous_admission_status");
+
+                    b.Property<int>("PreviousHoldStatus")
+                        .HasColumnType("integer")
+                        .HasColumnName("previous_hold_status");
+
+                    b.Property<int>("PreviousPaymentStatus")
+                        .HasColumnType("integer")
+                        .HasColumnName("previous_payment_status");
+
+                    b.Property<int>("Quantity")
+                        .HasColumnType("integer")
+                        .HasColumnName("quantity");
+
+                    b.Property<string>("StudentId")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("student_id");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("CancelledAt");
+
+                    b.HasIndex("ClassId");
+
+                    b.HasIndex("HoldId")
+                        .IsUnique();
+
+                    b.HasIndex("StudentId");
+
+                    b.ToTable("application_cancellations", (string)null);
+                });
+
             modelBuilder.Entity("SchoolAdmissionSystem.Models.SchoolClass", b =>
                 {
                     b.Property<Guid>("Id")
@@ -74,6 +141,10 @@ namespace SchoolAdmissionSystem.Data.Migrations
                     b.Property<int>("AdmissionStatus")
                         .HasColumnType("integer")
                         .HasColumnName("admission_status");
+
+                    b.Property<DateTimeOffset?>("CancelledAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("cancelled_at");
 
                     b.Property<Guid>("ClassId")
                         .HasColumnType("uuid")
@@ -128,6 +199,21 @@ namespace SchoolAdmissionSystem.Data.Migrations
                     b.HasIndex("StudentId");
 
                     b.ToTable("seat_holds", (string)null);
+                });
+
+            modelBuilder.Entity("SchoolAdmissionSystem.Models.ApplicationCancellation", b =>
+                {
+                    b.HasOne("SchoolAdmissionSystem.Models.SchoolClass", null)
+                        .WithMany()
+                        .HasForeignKey("ClassId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("SchoolAdmissionSystem.Models.SeatHold", null)
+                        .WithMany()
+                        .HasForeignKey("HoldId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
                 });
 
             modelBuilder.Entity("SchoolAdmissionSystem.Models.SeatHold", b =>

@@ -62,6 +62,7 @@ export const api = {
   getHold: (holdId) => request(`/holds/${holdId}`),
   confirmHold: (holdId) => request(`/holds/${holdId}/confirm`, { method: 'POST' }),
   payHold: (holdId) => request(`/holds/${holdId}/pay`, { method: 'POST' }),
+  cancelHold: (holdId) => request(`/holds/${holdId}/cancel`, { method: 'POST' }),
   releaseHold: (holdId) => request(`/holds/${holdId}`, { method: 'DELETE' }),
   getMyHolds: () => request('/me/holds'),
 };

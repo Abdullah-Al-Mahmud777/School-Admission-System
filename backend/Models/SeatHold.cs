@@ -34,6 +34,8 @@ public class SeatHold
 
     public DateTimeOffset? PaidAt { get; set; }
 
+    public DateTimeOffset? CancelledAt { get; set; }
+
     [ConcurrencyCheck]
     public int Version { get; set; }
 

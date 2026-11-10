@@ -14,6 +14,7 @@ public interface IHoldService
     Task<SeatHoldDto> GetHoldByIdAsync(Guid holdId, string? studentId = null);
     Task<SeatHoldDto> ConfirmHoldAsync(Guid holdId, string studentId);
     Task<SeatHoldDto> PayHoldAsync(Guid holdId, string studentId);
+    Task<SeatHoldDto> CancelHoldAsync(Guid holdId, string studentId);
     Task ReleaseHoldAsync(Guid holdId, string? studentId = null);
     Task<IEnumerable<UserHoldDto>> GetMyHoldsAsync(string studentId);
     Task<int> ExpireHoldsAsync();
@@ -194,6 +195,88 @@ public class HoldService : IHoldService
         }
     }
 
+    public async Task<SeatHoldDto> CancelHoldAsync(Guid holdId, string studentId)
+    {
+        Exception? lastEx = null;
+        for (var attempt = 0; attempt < MaxRetries; attempt++)
+        {
+            using var transaction = await _db.Database.BeginTransactionAsync(IsolationLevel.Serializable);
+            try
+            {
+                var hold = await _db.SeatHolds.FirstOrDefaultAsync(h => h.Id == holdId);
+                if (hold == null)
+                    throw new NotFoundException($"Hold {holdId} not found.");
+                if (hold.StudentId != studentId)
+                    throw new BadRequestException("Hold belongs to a different student.");
+                if (hold.Status == HoldStatus.Cancelled)
+                    throw new ConflictException("Application has already been cancelled.");
+                if (hold.Status != HoldStatus.Confirmed)
+                    throw new ConflictException($"Only confirmed applications can be cancelled. Hold is {hold.Status}.");
+
+                var previousHoldStatus = hold.Status;
+                var previousPaymentStatus = hold.PaymentStatus;
+                var previousAdmissionStatus = hold.AdmissionStatus;
+
+                // Lock the class row first (same order as confirm/release) so the freed
+                // seat is published atomically against concurrent hold creation.
+                await _db.Database.ExecuteSqlRawAsync(
+                    "SELECT 1 FROM \"classes\" WHERE id = @p0 FOR UPDATE", hold.ClassId);
+
+                var now = DateTimeOffset.UtcNow;
+
+                hold.Status = HoldStatus.Cancelled;
+                if (hold.PaymentStatus == PaymentStatus.Paid)
+                    hold.PaymentStatus = PaymentStatus.Refunded;
+                hold.AdmissionStatus = AdmissionStatus.Cancelled;
+                hold.CancelledAt = now;
+                hold.Version++;
+
+                _db.Cancellations.Add(new ApplicationCancellation
+                {
+                    Id = Guid.NewGuid(),
+                    HoldId = hold.Id,
+                    ClassId = hold.ClassId,
+                    StudentId = hold.StudentId,
+                    Quantity = hold.Quantity,
+                    PreviousHoldStatus = previousHoldStatus,
+                    PreviousPaymentStatus = previousPaymentStatus,
+                    PreviousAdmissionStatus = previousAdmissionStatus,
+                    NewHoldStatus = hold.Status,
+                    NewPaymentStatus = hold.PaymentStatus,
+                    NewAdmissionStatus = hold.AdmissionStatus,
+                    CancelledAt = now
+                });
+
+                await _db.SaveChangesAsync();
+                await transaction.CommitAsync();
+                return ToDto(hold);
+            }
+            catch (DbUpdateException ex) when (IsUniqueViolation(ex))
+            {
+                await transaction.RollbackAsync();
+                throw new ConflictException("Application has already been cancelled.");
+            }
+            catch (DbUpdateException ex) when (IsRetryablePostgresError(ex))
+            {
+                await transaction.RollbackAsync();
+                lastEx = ex;
+                if (attempt == MaxRetries - 1) throw;
+                await Task.Delay(100 * (attempt + 1));
+            }
+            catch (DbUpdateConcurrencyException)
+            {
+                await transaction.RollbackAsync();
+                throw new ConflictException("Application was modified by another operation. Please try again.");
+            }
+            catch
+            {
+                await transaction.RollbackAsync();
+                throw;
+            }
+        }
+        throw new InvalidOperationException("Failed to cancel application after retries.", lastEx);
+    }
+
     public async Task ReleaseHoldAsync(Guid holdId, string? studentId = null)
     {
         using var transaction = await _db.Database.BeginTransactionAsync(IsolationLevel.Serializable);
@@ -208,7 +291,7 @@ public class HoldService : IHoldService
                 throw new ConflictException("Paid admissions cannot be released.");
             if (hold.Status == HoldStatus.Confirmed)
                 throw new ConflictException("Confirmed holds cannot be released.");
-            if (hold.Status is HoldStatus.Expired or HoldStatus.Released)
+            if (hold.Status is HoldStatus.Expired or HoldStatus.Released or HoldStatus.Cancelled)
                 throw new ConflictException($"Hold is already {hold.Status}.");
 
             await _db.Database.ExecuteSqlRawAsync(
@@ -252,11 +335,12 @@ public class HoldService : IHoldService
                 PaymentStatus = h.PaymentStatus.ToString(),
                 AdmissionStatus = h.AdmissionStatus.ToString(),
                 PaidAt = h.PaidAt,
+                CancelledAt = h.CancelledAt,
                 ClassName = _db.Classes.Where(c => c.Id == h.ClassId).Select(c => c.Name).FirstOrDefault()!
             })
             .ToListAsync();
 
-        // One application per class, preferring an active application over an expired one.
+        // One application per class, preferring an active application over a cancelled/expired one.
         return holds
             .GroupBy(h => h.ClassId)
             .Select(group =>
@@ -264,9 +348,11 @@ public class HoldService : IHoldService
                 var confirmed = group.Where(h => h.Status == nameof(HoldStatus.Confirmed)).ToList();
                 var held = group.Where(h => h.Status == nameof(HoldStatus.Held)).ToList();
                 var expired = group.Where(h => h.Status == nameof(HoldStatus.Expired)).ToList();
+                var cancelled = group.Where(h => h.Status == nameof(HoldStatus.Cancelled)).ToList();
                 var paid = group.Where(h => h.PaymentStatus == nameof(PaymentStatus.Paid)).ToList();
                 var isConfirmed = confirmed.Count > 0;
                 var isHeld = held.Count > 0;
+                var isCancelled = cancelled.Count > 0;
 
                 var primary = paid
                     .OrderByDescending(h => h.PaidAt ?? h.ConfirmedAt ?? h.HeldAt)
@@ -275,9 +361,16 @@ public class HoldService : IHoldService
                         .OrderByDescending(h => h.ConfirmedAt ?? h.HeldAt)
                         .FirstOrDefault()
                     ?? held.OrderByDescending(h => h.HeldAt).FirstOrDefault()
+                    ?? cancelled
+                        .OrderByDescending(h => h.CancelledAt ?? h.HeldAt)
+                        .FirstOrDefault()
                     ?? expired.OrderByDescending(h => h.HeldAt).First();
 
-                var active = isConfirmed ? confirmed.Concat(held).ToList() : isHeld ? held : expired;
+                var active = isConfirmed
+                    ? confirmed.Concat(held).ToList()
+                    : isHeld ? held
+                    : isCancelled ? cancelled
+                    : expired;
 
                 return new UserHoldDto
                 {
@@ -286,13 +379,18 @@ public class HoldService : IHoldService
                     StudentId = primary.StudentId,
                     Quantity = isConfirmed
                         ? confirmed.Sum(h => h.Quantity) + held.Sum(h => h.Quantity)
-                        : isHeld ? held.Sum(h => h.Quantity) : primary.Quantity,
+                        : isHeld ? held.Sum(h => h.Quantity)
+                        : isCancelled ? cancelled.Sum(h => h.Quantity)
+                        : primary.Quantity,
                     Status = isConfirmed
                         ? nameof(HoldStatus.Confirmed)
-                        : isHeld ? nameof(HoldStatus.Held) : nameof(HoldStatus.Expired),
+                        : isHeld ? nameof(HoldStatus.Held)
+                        : isCancelled ? nameof(HoldStatus.Cancelled)
+                        : nameof(HoldStatus.Expired),
                     HeldAt = active.Min(h => h.HeldAt),
                     ExpiresAt = primary.ExpiresAt,
-                    ConfirmedAt = isConfirmed ? confirmed.Max(h => h.ConfirmedAt) : null,
+                    ConfirmedAt = isConfirmed ? confirmed.Max(h => h.ConfirmedAt) : primary.ConfirmedAt,
+                    CancelledAt = primary.CancelledAt,
                     PaymentStatus = primary.PaymentStatus,
                     AdmissionStatus = primary.AdmissionStatus,
                     PaidAt = primary.PaidAt,
@@ -325,12 +423,18 @@ public class HoldService : IHoldService
         ConfirmedAt = h.ConfirmedAt,
         PaymentStatus = h.PaymentStatus.ToString(),
         AdmissionStatus = h.AdmissionStatus.ToString(),
-        PaidAt = h.PaidAt
+        PaidAt = h.PaidAt,
+        CancelledAt = h.CancelledAt
     };
 
     private static bool IsRetryablePostgresError(DbUpdateException ex)
     {
         return ex.InnerException is PostgresException pg
             && (pg.SqlState == "40001" || pg.SqlState == "40P01");
+    }
+
+    private static bool IsUniqueViolation(DbUpdateException ex)
+    {
+        return ex.InnerException is PostgresException pg && pg.SqlState == "23505";
     }
 }
