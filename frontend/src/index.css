@@ -1,21 +1,52 @@
 :root {
-  --blue-primary: #2563eb;
-  --blue-hover: #1d4ed8;
-  --blue-light: #eff6ff;
+  /* Palette */
+  --primary: #2563eb;
+  --primary-hover: #1d4ed8;
+  --primary-soft: #eff6ff;
+  --success: #10b981;
+  --success-soft: #ecfdf5;
+  --danger: #ef4444;
+  --danger-soft: #fef2f2;
+  --warning: #f59e0b;
+  --warning-soft: #fffbeb;
+  --violet: #7c3aed;
+  --violet-soft: #f5f3ff;
+
+  /* Surfaces */
+  --bg: #f1f5f9;
+  --surface: #ffffff;
+  --surface-2: #f8fafc;
+  --sidebar-bg: #0f172a;
+  --sidebar-hover: rgba(255, 255, 255, 0.06);
+
+  /* Text */
   --text: #0f172a;
   --text-muted: #64748b;
-  --bg: #ffffff;
-  --card-bg: #ffffff;
+  --text-faint: #94a3b8;
+
+  /* Lines & elevation */
   --border: #e2e8f0;
-  --error: #ef4444;
-  --success: #10b981;
-  --shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+  --radius: 12px;
+  --radius-sm: 8px;
+  --radius-lg: 16px;
+  --shadow: 0 1px 2px rgba(15, 23, 42, 0.05), 0 1px 3px rgba(15, 23, 42, 0.06);
+  --shadow-md: 0 4px 14px -4px rgba(15, 23, 42, 0.1);
+  --shadow-lg: 0 24px 48px -16px rgba(15, 23, 42, 0.3);
 
-  --sans: system-ui, 'Segoe UI', Roboto, sans-serif;
-  --mono: ui-monospace, Consolas, monospace;
+  /* Legacy aliases used across components */
+  --blue-primary: var(--primary);
+  --blue-hover: var(--primary-hover);
+  --blue-light: var(--primary-soft);
+  --blue-bg: #dbeafe;
+  --card-bg: var(--surface);
+  --error: var(--danger);
 
-  font: 18px/145% var(--sans);
-  letter-spacing: 0.18px;
+  /* Type */
+  --sans: 'Inter', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  --mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, Consolas, monospace;
+
+  font: 16px/1.5 var(--sans);
+  letter-spacing: 0;
   color-scheme: light;
   color: var(--text);
   background: var(--bg);
@@ -23,6 +54,12 @@
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
 }
 
 body {
@@ -40,24 +77,22 @@ h1,
 h2,
 h3 {
   font-family: var(--sans);
-  font-weight: 600;
+  font-weight: 700;
   color: var(--text);
   margin: 0;
+  letter-spacing: -0.02em;
 }
 
 h1 {
-  font-size: 32px;
-  letter-spacing: -0.5px;
+  font-size: 28px;
 }
 
 h2 {
-  font-size: 24px;
-  margin-bottom: 16px;
+  font-size: 20px;
 }
 
 h3 {
-  font-size: 20px;
-  margin-bottom: 8px;
+  font-size: 16px;
 }
 
 p {
@@ -66,16 +101,30 @@ p {
 }
 
 a {
-  color: var(--blue-primary);
+  color: var(--primary);
   text-decoration: none;
 }
 
 a:hover {
-  text-decoration: underline;
+  text-decoration: none;
+}
+
+button {
+  font-family: inherit;
+}
+
+:focus-visible {
+  outline: 2px solid #93c5fd;
+  outline-offset: 2px;
+}
+
+::selection {
+  background: #bfdbfe;
+  color: var(--text);
 }
 
 @media (max-width: 1024px) {
   :root {
-    font-size: 16px;
+    font-size: 15px;
   }
 }
