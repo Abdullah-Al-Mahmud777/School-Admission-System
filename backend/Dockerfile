@@ -12,7 +12,7 @@ RUN dotnet restore "SchoolAdmissionSystem.csproj"
 
 # Copy the rest of the source and publish.
 COPY . .
-RUN dotnet publish "SchoolAdmissionSystem.csproj" -c Release -o /app/publish --no-restore
+RUN dotnet publish "SchoolAdmissionSystem.csproj" -c Release -o /app/publish
 
 #--------------------------------------------------------------------
 # Runtime stage

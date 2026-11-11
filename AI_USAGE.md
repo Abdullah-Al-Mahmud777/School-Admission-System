@@ -1,7 +1,7 @@
 # AI_USAGE
 
 ## Tools used
-- GitHub Copilot Chat (VS Code, Copilot CLI runtime) for:
+- GitHub Copilot,opencode,kilo code Chat (VS Code,) for:
   - Requirement gap analysis
   - Drafting infrastructure files (Docker Compose, Dockerfiles)
   - Generating test scaffolding and refactor suggestions
