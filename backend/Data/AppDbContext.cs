@@ -10,6 +10,7 @@ public class AppDbContext : DbContext
     public DbSet<SchoolClass> Classes => Set<SchoolClass>();
     public DbSet<SeatHold> SeatHolds => Set<SeatHold>();
     public DbSet<ApplicationCancellation> Cancellations => Set<ApplicationCancellation>();
+    public DbSet<AdminUser> AdminUsers => Set<AdminUser>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -25,7 +26,20 @@ public class AppDbContext : DbContext
             entity.Property(e => e.TotalSeats).HasColumnName("total_seats").IsRequired();
             entity.Property(e => e.CreatedAt).HasColumnName("created_at").IsRequired();
             entity.Property(e => e.Version).HasColumnName("version").IsRequired().IsConcurrencyToken();
-            entity.HasIndex(e => e.Name).IsUnique();
+            entity.HasIndex(e => new { e.Name, e.Shift }).IsUnique();
+        });
+
+        modelBuilder.Entity<AdminUser>(entity =>
+        {
+            entity.ToTable("admin_users");
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.Id).HasColumnName("id").ValueGeneratedOnAdd().HasDefaultValueSql("gen_random_uuid()");
+            entity.Property(e => e.Email).HasColumnName("email").IsRequired().HasMaxLength(200);
+            entity.Property(e => e.FullName).HasColumnName("full_name").IsRequired().HasMaxLength(150);
+            entity.Property(e => e.PasswordHash).HasColumnName("password_hash").IsRequired();
+            entity.Property(e => e.CreatedAt).HasColumnName("created_at").IsRequired();
+            entity.Property(e => e.LastLoginAt).HasColumnName("last_login_at");
+            entity.HasIndex(e => e.Email).IsUnique();
         });
 
         modelBuilder.Entity<SeatHold>(entity =>

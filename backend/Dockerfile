@@ -7,12 +7,11 @@ FROM mcr.microsoft.com/dotnet/sdk:8.0 AS build
 WORKDIR /src
 
 # Restore dependencies first (better layer caching).
-COPY ["SchoolAdmissionSystem/SchoolAdmissionSystem.csproj", "SchoolAdmissionSystem/"]
-RUN dotnet restore "SchoolAdmissionSystem/SchoolAdmissionSystem.csproj"
+COPY ["SchoolAdmissionSystem.csproj", "./"]
+RUN dotnet restore "SchoolAdmissionSystem.csproj"
 
 # Copy the rest of the source and publish.
 COPY . .
-WORKDIR "/src/SchoolAdmissionSystem"
 RUN dotnet publish "SchoolAdmissionSystem.csproj" -c Release -o /app/publish --no-restore
 
 #--------------------------------------------------------------------

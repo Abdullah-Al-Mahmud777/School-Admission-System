@@ -1,6 +1,10 @@
 import { useRef, useState } from 'react';
 
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
+const DEFAULT_ADMIN = {
+  email: import.meta.env.VITE_ADMIN_EMAIL || 'admin@school.edu',
+  password: import.meta.env.VITE_ADMIN_PASSWORD || 'Admin@12345',
+};
 
 function validate(values) {
   const errors = {};
@@ -251,6 +255,39 @@ export default function AdminLogin({ onLogin }) {
             <p className="form-subtitle">
               Enter your administrator credentials to access the admissions workspace.
             </p>
+
+            <div className="admin-demo-box" aria-label="Default administrator credentials">
+              <span className="admin-demo-heading">
+                <svg viewBox="0 0 20 20" fill="none" aria-hidden="true">
+                  <rect
+                    x="4.5"
+                    y="8.5"
+                    width="11"
+                    height="8"
+                    rx="2"
+                    stroke="currentColor"
+                    strokeWidth="1.5"
+                  />
+                  <path
+                    d="M7.5 8.5 V6.5 A2.5 2.5 0 0 1 12.5 6.5 V8.5"
+                    stroke="currentColor"
+                    strokeWidth="1.5"
+                    strokeLinecap="round"
+                  />
+                </svg>
+                Default admin credentials
+              </span>
+              <div className="admin-demo-values">
+                <div className="admin-demo-item">
+                  <span className="admin-demo-key">Email</span>
+                  <span className="admin-demo-value">{DEFAULT_ADMIN.email}</span>
+                </div>
+                <div className="admin-demo-item">
+                  <span className="admin-demo-key">Password</span>
+                  <span className="admin-demo-value">{DEFAULT_ADMIN.password}</span>
+                </div>
+              </div>
+            </div>
 
             <form className="admin-form" onSubmit={handleSubmit} noValidate>
               <div className="admin-field">

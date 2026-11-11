@@ -30,3 +30,9 @@ public class InsufficientSeatsException : AppException
     public InsufficientSeatsException(string message) : base(message) { }
     public override int StatusCode => 409;
 }
+
+public class UnauthorizedException : AppException
+{
+    public UnauthorizedException(string message) : base(message) { }
+    public override int StatusCode => 401;
+}
