@@ -693,7 +693,8 @@ export default function AdminClassManagement({ onSignOut }) {
             </h2>
             <p className="modal-body">
               You are about to delete <strong>{deleteTarget.name}</strong> ({deleteTarget.shift}).
-              This action cannot be undone. Classes with existing applications cannot be deleted.
+              This action cannot be undone. Classes with active applications or seat reservations
+              cannot be deleted.
             </p>
             {deleteOccupied > 0 && (
               <p className="admin-delete-warning">

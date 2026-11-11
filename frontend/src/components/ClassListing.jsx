@@ -48,6 +48,7 @@ const initialsOf = (name) =>
     .toUpperCase() || '?';
 
 const shiftKeyOf = (shift) => (shift || '').toLowerCase().replace(/[^a-z]/g, '');
+const normalizeStatus = (value) => (value || '').toString().trim().toUpperCase();
 
 export default function ClassListing({ onSignOut }) {
   const [classes, setClasses] = useState([]);
@@ -77,7 +78,7 @@ export default function ClassListing({ onSignOut }) {
       const data = await api.getMyHolds();
       setHolds(data);
     } catch (err) {
-      console.error('Failed to load holds:', err);
+      setError(err.message || 'Failed to load your applications.');
     }
   };
 
@@ -111,6 +112,23 @@ export default function ClassListing({ onSignOut }) {
     return () => clearInterval(id);
   }, []);
 
+  useEffect(() => {
+    const id = setInterval(async () => {
+      try {
+        const [classData, holdData] = await Promise.all([
+          api.getClasses(),
+          api.getMyHolds(),
+        ]);
+        setClasses(classData);
+        setHolds(holdData);
+      } catch (err) {
+        setError(err.message || 'Failed to refresh class and application data.');
+      }
+    }, 5000);
+
+    return () => clearInterval(id);
+  }, []);
+
   const handleApplyNow = async (classId) => {
     setApplyingClassId(classId);
     setError('');
@@ -121,6 +139,12 @@ export default function ClassListing({ onSignOut }) {
       await loadHolds();
     } catch (err) {
       setApplyingClassId(null);
+      if (err.status === 409) {
+        setError(err.message || 'No seats are currently available for this class.');
+        await loadClasses();
+        await loadHolds();
+        return;
+      }
       setError(err.message || 'Failed to apply for admission.');
     }
   };
@@ -141,7 +165,7 @@ export default function ClassListing({ onSignOut }) {
       await loadClasses();
       await loadHolds();
     } catch (err) {
-      setError(err.message || 'Failed to release hold.');
+      setError(err.message || 'Failed to cancel application.');
     }
   };
 
@@ -199,12 +223,20 @@ export default function ClassListing({ onSignOut }) {
 
   const studentId = getStudentId();
   const activeHoldClassIds = new Set(
-    holds.filter(h => h.status === 'Held' || h.status === 'Confirmed').map(h => h.class_id)
+    holds
+      .filter((h) => {
+        const status = normalizeStatus(h.status);
+        return status === 'HELD' || status === 'CONFIRMED';
+      })
+      .map((h) => h.class_id)
   );
 
   const totalAvailableSeats = classes.reduce((sum, cls) => sum + (cls.available_seats || 0), 0);
   const activeApplications = holds.filter(
-    (h) => h.status === 'Held' || h.status === 'Confirmed'
+    (h) => {
+      const status = normalizeStatus(h.status);
+      return status === 'HELD' || status === 'CONFIRMED';
+    }
   ).length;
   const admittedCount = holds.filter((h) => h.admission_status === 'Admitted').length;
 
@@ -475,18 +507,18 @@ export default function ClassListing({ onSignOut }) {
             ) : (
               <div className="holds-list">
                 {holds.map((hold) => {
-                  const holdStatus = hold.status || 'Unknown';
+                  const holdStatus = normalizeStatus(hold.status) || 'UNKNOWN';
                   const paymentStatus = hold.payment_status || 'Unpaid';
                   const admissionStatus = hold.admission_status || 'Pending';
                   const isPaid = paymentStatus === 'Paid';
-                  const isPayableStatus = holdStatus === 'Held' || holdStatus === 'Confirmed';
+                  const isPayableStatus = holdStatus === 'HELD' || holdStatus === 'CONFIRMED';
                   const isPastExpiry = new Date(hold.expires_at).getTime() <= now;
                   const holdExpired =
                     !isPaid &&
-                    (holdStatus === 'Expired' || (isPayableStatus && isPastExpiry));
+                    (holdStatus === 'EXPIRED' || (isPayableStatus && isPastExpiry));
                   const canPay = !isPaid && isPayableStatus && !holdExpired;
                   const isMuted =
-                    holdStatus === 'Cancelled' || holdStatus === 'Expired' || holdStatus === 'Released';
+                    holdStatus === 'CANCELLED' || holdStatus === 'EXPIRED' || holdStatus === 'RELEASED';
 
                   return (
                     <div
@@ -517,7 +549,7 @@ export default function ClassListing({ onSignOut }) {
                         <span className={`badge admission-${admissionStatus.toLowerCase()}`}>
                           Admission: {admissionStatus}
                         </span>
-                        {holdStatus === 'Held' && (
+                        {holdStatus === 'HELD' && (
                           <span className="timer">
                             <svg viewBox="0 0 20 20" fill="none" aria-hidden="true">
                               <circle cx="10" cy="10" r="7" stroke="currentColor" strokeWidth="1.7" />
@@ -558,10 +590,10 @@ export default function ClassListing({ onSignOut }) {
                       </dl>
 
                       <div className="hold-actions">
-                        {holdStatus === 'Held' && (
+                        {holdStatus === 'HELD' && (
                           <>
                             <button onClick={() => handleConfirm(hold.id)} className="confirm-btn">Confirm</button>
-                            <button onClick={() => handleRelease(hold.id)} className="release-btn">Release</button>
+                            <button onClick={() => handleRelease(hold.id)} className="release-btn">Cancel</button>
                           </>
                         )}
                         {isPaid ? (
@@ -577,7 +609,7 @@ export default function ClassListing({ onSignOut }) {
                         ) : holdExpired ? (
                           <button disabled className="pay-btn pay-disabled">Payment Expired</button>
                         ) : null}
-                        {holdStatus === 'Confirmed' && (
+                        {holdStatus === 'CONFIRMED' && (
                           <button
                             onClick={() => setCancelTarget(hold)}
                             disabled={!!cancellingHoldId}

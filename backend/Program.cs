@@ -82,6 +82,17 @@ app.MapControllers();
 
 try
 {
+    using var scope = app.Services.CreateScope();
+    var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+    await db.Database.MigrateAsync();
+}
+catch (Exception ex)
+{
+    app.Logger.LogError(ex, "Failed to apply database migrations.");
+}
+
+try
+{
     await AdminSeeder.SeedAsync(app.Services, app.Configuration, app.Logger);
 }
 catch (Exception ex)
@@ -89,6 +100,25 @@ catch (Exception ex)
     app.Logger.LogError(ex, "Failed to seed the administrator account.");
 }
 
-// Listen on port 5001 by default (overridable via the PORT environment variable, e.g. Docker).
-var port = Environment.GetEnvironmentVariable("PORT") ?? "5001";
-app.Run($"http://0.0.0.0:{port}");
+// Bind to all interfaces (IPv4 and IPv6) so browser requests to localhost,
+// 127.0.0.1, or [::1] all reach the API. PORT takes precedence; otherwise use
+// the port from ASPNETCORE_URLS (Docker) and finally fall back to 8080.
+var configuredUrls = Environment.GetEnvironmentVariable("ASPNETCORE_URLS")
+    ?? Environment.GetEnvironmentVariable("URLS");
+var port = Environment.GetEnvironmentVariable("PORT");
+
+if (string.IsNullOrWhiteSpace(port))
+{
+    port = "8080";
+    if (!string.IsNullOrWhiteSpace(configuredUrls))
+    {
+        var configuredPort = configuredUrls
+            .Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Select(url => Uri.TryCreate(url, UriKind.Absolute, out var uri) ? uri.Port : 0)
+            .FirstOrDefault(value => value > 0);
+        if (configuredPort > 0)
+            port = configuredPort.ToString();
+    }
+}
+
+app.Run($"http://*:{port}");

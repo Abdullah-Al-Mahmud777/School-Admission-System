@@ -17,10 +17,16 @@ public class ClassHoldsController : BaseApiController
         if (!ModelState.IsValid)
             return ValidationProblem(ModelState);
 
-        var durationHeader = Request.Headers["HOLD_DURATION_SECONDS"].FirstOrDefault();
-        var holdDuration = !string.IsNullOrWhiteSpace(durationHeader) && double.TryParse(durationHeader, out var seconds)
-            ? TimeSpan.FromSeconds(seconds)
-            : TimeSpan.FromMinutes(10);
+        var holdDurationSecondsRaw = Environment.GetEnvironmentVariable("HOLD_DURATION_SECONDS");
+        var holdDurationSeconds = 600;
+        if (!string.IsNullOrWhiteSpace(holdDurationSecondsRaw)
+            && int.TryParse(holdDurationSecondsRaw, out var parsed)
+            && parsed > 0)
+        {
+            holdDurationSeconds = parsed;
+        }
+
+        var holdDuration = TimeSpan.FromSeconds(holdDurationSeconds);
 
         var hold = await _holdService.HoldSeatsAsync(classId, StudentId, dto, holdDuration);
         return Created($"/holds/{hold.Id}", hold);

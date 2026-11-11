@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { api } from '../api';
 
 const STATUS_OPTIONS = ['All', 'Held', 'Confirmed', 'Cancelled', 'Expired', 'Released'];
+const CANCELLABLE_STATUSES = new Set(['Held', 'Confirmed']);
 
 function formatDateTime(value) {
   if (!value) return '—';
@@ -21,13 +22,26 @@ function statusBadge(value) {
   return <span className={`status-badge status-${key}`}>{value || 'Unknown'}</span>;
 }
 
+function extractErrorMessage(error) {
+  const data = error?.data;
+  if (data?.errors && typeof data.errors === 'object') {
+    const messages = Object.values(data.errors).flat().filter(Boolean);
+    if (messages.length > 0) return messages.join(' ');
+  }
+  return data?.message || error?.message || 'Something went wrong. Please try again.';
+}
+
 export default function AdminApplications() {
   const [applications, setApplications] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [notice, setNotice] = useState('');
   const [query, setQuery] = useState('');
   const [status, setStatus] = useState('All');
   const [refreshKey, setRefreshKey] = useState(0);
+  const [cancelTarget, setCancelTarget] = useState(null);
+  const [cancelError, setCancelError] = useState('');
+  const [cancelling, setCancelling] = useState(false);
 
   useEffect(() => {
     let active = true;
@@ -41,7 +55,7 @@ export default function AdminApplications() {
       })
       .catch((err) => {
         if (!active || err.status === 401) return;
-        setError(err?.data?.message || err?.message || 'Unable to load applications.');
+        setError(extractErrorMessage(err));
       })
       .finally(() => {
         if (active) setLoading(false);
@@ -51,6 +65,59 @@ export default function AdminApplications() {
       active = false;
     };
   }, [refreshKey]);
+
+  useEffect(() => {
+    if (!cancelTarget) return undefined;
+
+    const handleKeyDown = (event) => {
+      if (event.key !== 'Escape' || cancelling) return;
+      setCancelTarget(null);
+      setCancelError('');
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [cancelTarget, cancelling]);
+
+  const reload = () => {
+    setLoading(true);
+    setRefreshKey((value) => value + 1);
+  };
+
+  const openCancelModal = (app) => {
+    setCancelTarget(app);
+    setCancelError('');
+    setNotice('');
+  };
+
+  const closeCancelModal = () => {
+    if (cancelling) return;
+    setCancelTarget(null);
+    setCancelError('');
+  };
+
+  const handleCancelApplication = async () => {
+    if (!cancelTarget) return;
+
+    setCancelling(true);
+    setCancelError('');
+
+    try {
+      const cancelled = await api.cancelAdminApplication(cancelTarget.id);
+      const refundNote =
+        cancelled.payment_status === 'Refunded' ? ' The admission fee was marked as refunded.' : '';
+      setNotice(
+        `Application ${cancelled.student_id} for "${cancelled.class_name || cancelTarget.class_name}" was cancelled.${refundNote}`,
+      );
+      setCancelTarget(null);
+      reload();
+    } catch (err) {
+      if (err.status === 401) return;
+      setCancelError(extractErrorMessage(err));
+    } finally {
+      setCancelling(false);
+    }
+  };
 
   const normalizedQuery = query.trim().toLowerCase();
   const filtered = applications.filter((app) => {
@@ -76,10 +143,7 @@ export default function AdminApplications() {
         <button
           type="button"
           className="admin-manage-signout admin-refresh-btn"
-          onClick={() => {
-            setLoading(true);
-            setRefreshKey((value) => value + 1);
-          }}
+          onClick={reload}
           disabled={loading}
         >
           <svg viewBox="0 0 20 20" fill="none" aria-hidden="true">
@@ -97,6 +161,24 @@ export default function AdminApplications() {
             <path d="M10 6.5 V10.5 M10 13.4 V13.5" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
           </svg>
           {error}
+        </div>
+      )}
+
+      {notice && (
+        <div className="admin-success-banner" role="status">
+          <svg viewBox="0 0 20 20" fill="none" aria-hidden="true">
+            <circle cx="10" cy="10" r="7.5" stroke="currentColor" strokeWidth="1.6" />
+            <path d="M6.5 10.3 L9 12.8 L13.6 7.8" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+          </svg>
+          {notice}
+          <button
+            type="button"
+            className="admin-banner-close"
+            onClick={() => setNotice('')}
+            aria-label="Dismiss message"
+          >
+            ×
+          </button>
         </div>
       )}
 
@@ -171,6 +253,7 @@ export default function AdminApplications() {
                   <th>Admission</th>
                   <th>Submitted</th>
                   <th>Expires</th>
+                  <th style={{ textAlign: 'right' }}>Actions</th>
                 </tr>
               </thead>
               <tbody>
@@ -187,6 +270,21 @@ export default function AdminApplications() {
                     <td>{statusBadge(app.admission_status)}</td>
                     <td className="admin-table-date">{formatDateTime(app.held_at)}</td>
                     <td className="admin-table-date">{formatDateTime(app.expires_at)}</td>
+                    <td className="cell-action">
+                      {CANCELLABLE_STATUSES.has(app.status) ? (
+                        <button
+                          type="button"
+                          className="admin-application-cancel-btn"
+                          onClick={() => openCancelModal(app)}
+                          disabled={cancelling}
+                          aria-label={`Cancel application ${app.student_id} for ${app.class_name}`}
+                        >
+                          Cancel
+                        </button>
+                      ) : (
+                        <span className="admin-action-muted">—</span>
+                      )}
+                    </td>
                   </tr>
                 ))}
               </tbody>
@@ -194,6 +292,63 @@ export default function AdminApplications() {
           </div>
         )}
       </section>
+
+      {cancelTarget && (
+        <div
+          className="modal-overlay"
+          role="presentation"
+          onMouseDown={(event) => {
+            if (event.target === event.currentTarget) closeCancelModal();
+          }}
+        >
+          <div
+            className="modal admin-cancel-modal"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="cancel-application-title"
+          >
+            <span className="modal-icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24" fill="none">
+                <path d="M12 4 L21 19 H3 Z" stroke="currentColor" strokeWidth="1.8" strokeLinejoin="round" />
+                <path d="M12 10 V13.5 M12 16.2 V16.3" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" />
+              </svg>
+            </span>
+            <h2 className="modal-title" id="cancel-application-title">Cancel application?</h2>
+            <p className="modal-body">
+              Cancel the application for <strong>{cancelTarget.student_id}</strong> in{' '}
+              <strong>{cancelTarget.class_name}</strong> ({cancelTarget.class_shift}). The seat will
+              be released immediately
+              {cancelTarget.payment_status === 'Paid'
+                ? ' and the payment will be marked as refunded'
+                : ''}
+              . The application and audit history will be retained.
+            </p>
+            {cancelError && (
+              <p className="error-msg" role="alert">
+                {cancelError}
+              </p>
+            )}
+            <div className="modal-actions">
+              <button
+                type="button"
+                className="modal-btn modal-btn-secondary"
+                onClick={closeCancelModal}
+                disabled={cancelling}
+              >
+                Keep application
+              </button>
+              <button
+                type="button"
+                className="modal-btn modal-btn-danger"
+                onClick={handleCancelApplication}
+                disabled={cancelling}
+              >
+                {cancelling ? 'Cancelling…' : 'Cancel application'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </main>
   );
 }

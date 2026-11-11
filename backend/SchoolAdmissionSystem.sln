@@ -5,6 +5,10 @@ VisualStudioVersion = 17.0.31903.59
 MinimumVisualStudioVersion = 10.0.40219.1
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "SchoolAdmissionSystem", "SchoolAdmissionSystem.csproj", "{28E9C88B-BDB8-4E08-A614-4CC8617C43A6}"
 EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "tests", "tests", "{88751F6F-31BE-47C9-828D-F582F0627551}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "SchoolAdmissionSystem.Tests", "tests\SchoolAdmissionSystem.Tests\SchoolAdmissionSystem.Tests.csproj", "{BBD8536A-78D9-463A-BEB9-F1C9FC607AB0}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -18,5 +22,12 @@ Global
 		{28E9C88B-BDB8-4E08-A614-4CC8617C43A6}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{28E9C88B-BDB8-4E08-A614-4CC8617C43A6}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{28E9C88B-BDB8-4E08-A614-4CC8617C43A6}.Release|Any CPU.Build.0 = Release|Any CPU
+		{BBD8536A-78D9-463A-BEB9-F1C9FC607AB0}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{BBD8536A-78D9-463A-BEB9-F1C9FC607AB0}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{BBD8536A-78D9-463A-BEB9-F1C9FC607AB0}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{BBD8536A-78D9-463A-BEB9-F1C9FC607AB0}.Release|Any CPU.Build.0 = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(NestedProjects) = preSolution
+		{BBD8536A-78D9-463A-BEB9-F1C9FC607AB0} = {88751F6F-31BE-47C9-828D-F582F0627551}
 	EndGlobalSection
 EndGlobal

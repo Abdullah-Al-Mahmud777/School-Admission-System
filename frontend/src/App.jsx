@@ -12,6 +12,8 @@ import {
   getAdminSession,
   saveAdminSession,
   clearAdminSession,
+  getStudentId,
+  isValidStudentId,
   ADMIN_UNAUTHORIZED_EVENT,
 } from './api';
 import './App.css'
@@ -28,8 +30,13 @@ function isAdminPath(path) {
   return path === '/admin' || path.startsWith('/admin/');
 }
 
+function initialStudentPage() {
+  const storedStudentId = getStudentId();
+  return storedStudentId && isValidStudentId(storedStudentId) ? 'classes' : 'identification';
+}
+
 function App() {
-  const [page, setPage] = useState('identification');
+  const [page, setPage] = useState(initialStudentPage);
   const [path, setPath] = useState(currentPath);
   const [adminSession, setAdminSession] = useState(() => getAdminSession());
 

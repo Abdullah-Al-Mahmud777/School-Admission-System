@@ -20,4 +20,18 @@ public class AdminApplicationsController : ControllerBase
         var applications = await _holdService.GetAdminApplicationsAsync();
         return Ok(applications);
     }
+
+    [HttpPost("{applicationId:guid}/cancel")]
+    public async Task<ActionResult<SeatHoldDto>> CancelApplication(Guid applicationId)
+    {
+        var application = await _holdService.CancelHoldAsync(applicationId);
+        return Ok(application);
+    }
+
+    [HttpDelete("{applicationId:guid}")]
+    public async Task<ActionResult> DeleteApplication(Guid applicationId)
+    {
+        await _holdService.CancelHoldAsync(applicationId, null, allowTerminalNoOp: true);
+        return NoContent();
+    }
 }

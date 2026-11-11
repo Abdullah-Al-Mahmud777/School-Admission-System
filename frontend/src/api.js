@@ -1,4 +1,4 @@
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5001';
+const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8080';
 
 const STUDENT_ID_KEY = 'school_admission_student_id';
 const ADMIN_TOKEN_KEY = 'school_admission_admin_token';
@@ -158,6 +158,10 @@ export const api = {
   getAdminMe: () => request('/auth/me'),
   getAdminClasses: () => request('/admin/classes'),
   getAdminApplications: () => request('/admin/applications'),
+  cancelAdminApplication: (applicationId) =>
+    request(`/admin/applications/${applicationId}/cancel`, { method: 'POST' }),
+  deleteAdminApplication: (applicationId) =>
+    request(`/admin/applications/${applicationId}`, { method: 'DELETE' }),
   createClass: (payload) =>
     request('/admin/classes', {
       method: 'POST',

@@ -57,6 +57,33 @@ public class ClassService : IClassService
     public async Task<IEnumerable<ClassDto>> GetAllClassesAsync()
     {
         var now = DateTimeOffset.UtcNow;
+        if (!IsPostgres())
+        {
+            var classes = await _db.Classes
+                .AsNoTracking()
+                .OrderBy(c => c.Name)
+                .ThenBy(c => c.Shift)
+                .ToListAsync();
+
+            var holds = await _db.SeatHolds
+                .AsNoTracking()
+                .Select(h => new { h.ClassId, h.Status, h.ExpiresAt, h.Quantity })
+                .ToListAsync();
+
+            return classes.Select(c =>
+            {
+                var held = holds
+                    .Where(h => h.ClassId == c.Id
+                        && h.Status == HoldStatus.Held
+                        && h.ExpiresAt > now)
+                    .Sum(h => h.Quantity);
+                var confirmed = holds
+                    .Where(h => h.ClassId == c.Id && h.Status == HoldStatus.Confirmed)
+                    .Sum(h => h.Quantity);
+                return ToDto(c, held, confirmed);
+            }).ToList();
+        }
+
         return await _db.Classes
             .AsNoTracking()
             .OrderBy(c => c.Name)
@@ -88,14 +115,7 @@ public class ClassService : IClassService
             .FirstOrDefaultAsync(c => c.Id == classId);
         if (c == null) return null;
 
-        var held = await _db.SeatHolds
-            .Where(h => h.ClassId == classId
-                && h.Status == HoldStatus.Held
-                && h.ExpiresAt > now)
-            .SumAsync(h => (int?)h.Quantity) ?? 0;
-        var confirmed = await _db.SeatHolds
-            .Where(h => h.ClassId == classId && h.Status == HoldStatus.Confirmed)
-            .SumAsync(h => (int?)h.Quantity) ?? 0;
+        var (held, confirmed) = await GetSeatCountsAsync(classId, now);
 
         return ToDto(c, held, confirmed);
     }
@@ -117,14 +137,7 @@ public class ClassService : IClassService
             await EnsureUniqueAsync(name, shift, classId);
 
             var now = DateTimeOffset.UtcNow;
-            var held = await _db.SeatHolds
-                .Where(h => h.ClassId == classId
-                    && h.Status == HoldStatus.Held
-                    && h.ExpiresAt > now)
-                .SumAsync(h => (int?)h.Quantity) ?? 0;
-            var confirmed = await _db.SeatHolds
-                .Where(h => h.ClassId == classId && h.Status == HoldStatus.Confirmed)
-                .SumAsync(h => (int?)h.Quantity) ?? 0;
+            var (held, confirmed) = await GetSeatCountsAsync(classId, now);
             var occupied = held + confirmed;
 
             if (dto.TotalSeats < occupied)
@@ -165,10 +178,12 @@ public class ClassService : IClassService
             if (entity == null)
                 throw new NotFoundException($"Class {classId} not found.");
 
-            var hasApplications = await _db.SeatHolds.AnyAsync(h => h.ClassId == classId)
-                || await _db.Cancellations.AnyAsync(c => c.ClassId == classId);
-            if (hasApplications)
-                throw new ConflictException("Cannot delete a class that has existing applications.");
+            var now = DateTimeOffset.UtcNow;
+            var (activeHeldCount, confirmedCount) = await GetSeatCountsAsync(classId, now);
+
+            if (activeHeldCount + confirmedCount > 0)
+                throw new ConflictException(
+                    $"Cannot delete this class because it has {activeHeldCount} active held seat(s) and {confirmedCount} confirmed seat(s). Release or cancel them first.");
 
             _db.Classes.Remove(entity);
             await _db.SaveChangesAsync();
@@ -217,6 +232,42 @@ public class ClassService : IClassService
     private static bool IsUniqueViolation(DbUpdateException ex)
     {
         return ex.InnerException is PostgresException pg && pg.SqlState == "23505";
+    }
+
+    private bool IsPostgres()
+    {
+        return _db.Database.ProviderName?.Contains("Npgsql", StringComparison.OrdinalIgnoreCase) == true;
+    }
+
+    private async Task<(int Held, int Confirmed)> GetSeatCountsAsync(Guid classId, DateTimeOffset now)
+    {
+        if (IsPostgres())
+        {
+            var held = await _db.SeatHolds
+                .Where(h => h.ClassId == classId
+                    && h.Status == HoldStatus.Held
+                    && h.ExpiresAt > now)
+                .SumAsync(h => (int?)h.Quantity) ?? 0;
+            var confirmed = await _db.SeatHolds
+                .Where(h => h.ClassId == classId && h.Status == HoldStatus.Confirmed)
+                .SumAsync(h => (int?)h.Quantity) ?? 0;
+            return (held, confirmed);
+        }
+
+        var classHolds = await _db.SeatHolds
+            .AsNoTracking()
+            .Where(h => h.ClassId == classId)
+            .Select(h => new { h.Status, h.ExpiresAt, h.Quantity })
+            .ToListAsync();
+
+        var heldSeats = classHolds
+            .Where(h => h.Status == HoldStatus.Held && h.ExpiresAt > now)
+            .Sum(h => h.Quantity);
+        var confirmedSeats = classHolds
+            .Where(h => h.Status == HoldStatus.Confirmed)
+            .Sum(h => h.Quantity);
+
+        return (heldSeats, confirmedSeats);
     }
 
     private static ClassDto ToDto(SchoolClass c, int held, int confirmed) => new()

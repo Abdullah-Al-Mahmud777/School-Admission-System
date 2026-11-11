@@ -14,7 +14,7 @@ public interface IHoldService
     Task<SeatHoldDto> GetHoldByIdAsync(Guid holdId, string? studentId = null);
     Task<SeatHoldDto> ConfirmHoldAsync(Guid holdId, string studentId);
     Task<SeatHoldDto> PayHoldAsync(Guid holdId, string studentId);
-    Task<SeatHoldDto> CancelHoldAsync(Guid holdId, string studentId);
+    Task<SeatHoldDto> CancelHoldAsync(Guid holdId, string? studentId = null, bool allowTerminalNoOp = false);
     Task ReleaseHoldAsync(Guid holdId, string? studentId = null);
     Task<IEnumerable<UserHoldDto>> GetMyHoldsAsync(string studentId);
     Task<IEnumerable<AdminApplicationDto>> GetAdminApplicationsAsync();
@@ -30,14 +30,16 @@ public class HoldService : IHoldService
 
     public async Task<SeatHoldDto> HoldSeatsAsync(Guid classId, string studentId, CreateHoldDto dto, TimeSpan holdDuration)
     {
+        if (dto.Quantity < 1)
+            throw new BadRequestException("Quantity must be at least 1.");
+
         Exception? lastEx = null;
         for (var attempt = 0; attempt < MaxRetries; attempt++)
         {
             using var transaction = await _db.Database.BeginTransactionAsync(IsolationLevel.Serializable);
             try
             {
-                await _db.Database.ExecuteSqlRawAsync(
-                    "SELECT 1 FROM \"classes\" WHERE id = @p0 FOR UPDATE", classId);
+                await LockClassRowAsync(classId);
 
                 var schoolClass = await _db.Classes.AsNoTracking()
                     .FirstOrDefaultAsync(c => c.Id == classId);
@@ -45,11 +47,16 @@ public class HoldService : IHoldService
                     throw new NotFoundException($"Class {classId} not found.");
 
                 var now = DateTimeOffset.UtcNow;
-                var heldSeats = await _db.SeatHolds
-                    .Where(h => h.ClassId == classId
-                        && (h.Status == HoldStatus.Confirmed
-                            || (h.Status == HoldStatus.Held && h.ExpiresAt > now)))
-                    .SumAsync(h => (int?)h.Quantity) ?? 0;
+                var hasActiveOrConfirmedApplication = await HasActiveOrConfirmedApplicationAsync(
+                    classId, studentId, now);
+
+                if (hasActiveOrConfirmedApplication)
+                {
+                    throw new ConflictException(
+                        "You already have an active or confirmed application for this class.");
+                }
+
+                var heldSeats = await GetOccupiedSeatCountAsync(classId, now);
 
                 var available = schoolClass.TotalSeats - heldSeats;
                 if (dto.Quantity > available)
@@ -118,8 +125,7 @@ public class HoldService : IHoldService
                 if (hold.ExpiresAt <= DateTimeOffset.UtcNow)
                     throw new ConflictException("Hold has expired.");
 
-                await _db.Database.ExecuteSqlRawAsync(
-                    "SELECT 1 FROM \"classes\" WHERE id = @p0 FOR UPDATE", hold.ClassId);
+                await LockClassRowAsync(hold.ClassId);
 
                 hold.Status = HoldStatus.Confirmed;
                 hold.ConfirmedAt = DateTimeOffset.UtcNow;
@@ -151,8 +157,7 @@ public class HoldService : IHoldService
         using var transaction = await _db.Database.BeginTransactionAsync(IsolationLevel.Serializable);
         try
         {
-            await _db.Database.ExecuteSqlRawAsync(
-                "SELECT 1 FROM \"seat_holds\" WHERE id = @p0 FOR UPDATE", holdId);
+            await LockHoldRowAsync(holdId);
 
             var hold = await _db.SeatHolds.FirstOrDefaultAsync(h => h.Id == holdId);
             if (hold == null)
@@ -196,7 +201,7 @@ public class HoldService : IHoldService
         }
     }
 
-    public async Task<SeatHoldDto> CancelHoldAsync(Guid holdId, string studentId)
+    public async Task<SeatHoldDto> CancelHoldAsync(Guid holdId, string? studentId = null, bool allowTerminalNoOp = false)
     {
         Exception? lastEx = null;
         for (var attempt = 0; attempt < MaxRetries; attempt++)
@@ -206,22 +211,39 @@ public class HoldService : IHoldService
             {
                 var hold = await _db.SeatHolds.FirstOrDefaultAsync(h => h.Id == holdId);
                 if (hold == null)
-                    throw new NotFoundException($"Hold {holdId} not found.");
-                if (hold.StudentId != studentId)
-                    throw new BadRequestException("Hold belongs to a different student.");
+                    throw new NotFoundException($"Application {holdId} not found.");
+                if (studentId is not null && hold.StudentId != studentId)
+                    throw new BadRequestException("Application belongs to a different student.");
+
                 if (hold.Status == HoldStatus.Cancelled)
-                    throw new ConflictException("Application has already been cancelled.");
-                if (hold.Status != HoldStatus.Confirmed)
-                    throw new ConflictException($"Only confirmed applications can be cancelled. Hold is {hold.Status}.");
+                {
+                    await transaction.RollbackAsync();
+                    return ToDto(hold);
+                }
+
+                if (hold.Status is HoldStatus.Released or HoldStatus.Expired)
+                {
+                    if (allowTerminalNoOp)
+                    {
+                        await transaction.RollbackAsync();
+                        return ToDto(hold);
+                    }
+
+                    throw new ConflictException(
+                        $"Application is already {hold.Status} and cannot be cancelled.");
+                }
+
+                if (hold.Status is not (HoldStatus.Held or HoldStatus.Confirmed))
+                    throw new ConflictException(
+                        $"Application is {hold.Status} and cannot be cancelled.");
 
                 var previousHoldStatus = hold.Status;
                 var previousPaymentStatus = hold.PaymentStatus;
                 var previousAdmissionStatus = hold.AdmissionStatus;
 
-                // Lock the class row first (same order as confirm/release) so the freed
-                // seat is published atomically against concurrent hold creation.
-                await _db.Database.ExecuteSqlRawAsync(
-                    "SELECT 1 FROM \"classes\" WHERE id = @p0 FOR UPDATE", hold.ClassId);
+                // Lock the class row first so freed capacity is published atomically
+                // against concurrent hold creation.
+                await LockClassRowAsync(hold.ClassId);
 
                 var now = DateTimeOffset.UtcNow;
 
@@ -232,21 +254,27 @@ public class HoldService : IHoldService
                 hold.CancelledAt = now;
                 hold.Version++;
 
-                _db.Cancellations.Add(new ApplicationCancellation
+                var cancellationExists = await _db.Cancellations
+                    .AnyAsync(c => c.HoldId == hold.Id);
+
+                if (!cancellationExists)
                 {
-                    Id = Guid.NewGuid(),
-                    HoldId = hold.Id,
-                    ClassId = hold.ClassId,
-                    StudentId = hold.StudentId,
-                    Quantity = hold.Quantity,
-                    PreviousHoldStatus = previousHoldStatus,
-                    PreviousPaymentStatus = previousPaymentStatus,
-                    PreviousAdmissionStatus = previousAdmissionStatus,
-                    NewHoldStatus = hold.Status,
-                    NewPaymentStatus = hold.PaymentStatus,
-                    NewAdmissionStatus = hold.AdmissionStatus,
-                    CancelledAt = now
-                });
+                    _db.Cancellations.Add(new ApplicationCancellation
+                    {
+                        Id = Guid.NewGuid(),
+                        HoldId = hold.Id,
+                        ClassId = hold.ClassId,
+                        StudentId = hold.StudentId,
+                        Quantity = hold.Quantity,
+                        PreviousHoldStatus = previousHoldStatus,
+                        PreviousPaymentStatus = previousPaymentStatus,
+                        PreviousAdmissionStatus = previousAdmissionStatus,
+                        NewHoldStatus = hold.Status,
+                        NewPaymentStatus = hold.PaymentStatus,
+                        NewAdmissionStatus = hold.AdmissionStatus,
+                        CancelledAt = now
+                    });
+                }
 
                 await _db.SaveChangesAsync();
                 await transaction.CommitAsync();
@@ -255,6 +283,11 @@ public class HoldService : IHoldService
             catch (DbUpdateException ex) when (IsUniqueViolation(ex))
             {
                 await transaction.RollbackAsync();
+                var existing = await _db.SeatHolds
+                    .AsNoTracking()
+                    .FirstOrDefaultAsync(h => h.Id == holdId);
+                if (existing?.Status == HoldStatus.Cancelled)
+                    return ToDto(existing);
                 throw new ConflictException("Application has already been cancelled.");
             }
             catch (DbUpdateException ex) when (IsRetryablePostgresError(ex))
@@ -288,12 +321,17 @@ public class HoldService : IHoldService
                 throw new NotFoundException($"Hold {holdId} not found.");
             if (studentId is not null && hold.StudentId != studentId)
                 throw new BadRequestException("Hold belongs to a different student.");
+
+            if (hold.Status is HoldStatus.Released or HoldStatus.Expired or HoldStatus.Cancelled)
+            {
+                await transaction.RollbackAsync();
+                return;
+            }
+
             if (hold.PaymentStatus == PaymentStatus.Paid || hold.AdmissionStatus == AdmissionStatus.Admitted)
-                throw new ConflictException("Paid admissions cannot be released.");
+                throw new ConflictException("Paid admissions cannot be released. Cancel the application instead.");
             if (hold.Status == HoldStatus.Confirmed)
-                throw new ConflictException("Confirmed holds cannot be released.");
-            if (hold.Status is HoldStatus.Expired or HoldStatus.Released or HoldStatus.Cancelled)
-                throw new ConflictException($"Hold is already {hold.Status}.");
+                throw new ConflictException("Confirmed applications cannot be released. Cancel the application instead.");
 
             await _db.Database.ExecuteSqlRawAsync(
                 "SELECT 1 FROM \"classes\" WHERE id = @p0 FOR UPDATE", hold.ClassId);
@@ -383,11 +421,11 @@ public class HoldService : IHoldService
                         : isHeld ? held.Sum(h => h.Quantity)
                         : isCancelled ? cancelled.Sum(h => h.Quantity)
                         : primary.Quantity,
-                    Status = isConfirmed
+                    Status = (isConfirmed
                         ? nameof(HoldStatus.Confirmed)
                         : isHeld ? nameof(HoldStatus.Held)
                         : isCancelled ? nameof(HoldStatus.Cancelled)
-                        : nameof(HoldStatus.Expired),
+                        : nameof(HoldStatus.Expired)).ToUpperInvariant(),
                     HeldAt = active.Min(h => h.HeldAt),
                     ExpiresAt = primary.ExpiresAt,
                     ConfirmedAt = isConfirmed ? confirmed.Max(h => h.ConfirmedAt) : primary.ConfirmedAt,
@@ -415,7 +453,7 @@ public class HoldService : IHoldService
                 ClassId = h.ClassId,
                 StudentId = h.StudentId,
                 Quantity = h.Quantity,
-                Status = h.Status.ToString(),
+                Status = h.Status.ToString().ToUpperInvariant(),
                 HeldAt = h.HeldAt,
                 ExpiresAt = h.ExpiresAt,
                 ConfirmedAt = h.ConfirmedAt,
@@ -432,11 +470,31 @@ public class HoldService : IHoldService
     public async Task<int> ExpireHoldsAsync()
     {
         var now = DateTimeOffset.UtcNow;
-        return await _db.SeatHolds
-            .Where(h => h.Status == HoldStatus.Held && h.ExpiresAt <= now)
-            .ExecuteUpdateAsync(setters => setters
-                .SetProperty(h => h.Status, HoldStatus.Expired)
-                .SetProperty(h => h.Version, h => h.Version + 1));
+        if (IsPostgres())
+        {
+            return await _db.SeatHolds
+                .Where(h => h.Status == HoldStatus.Held && h.ExpiresAt <= now)
+                .ExecuteUpdateAsync(setters => setters
+                    .SetProperty(h => h.Status, HoldStatus.Expired)
+                    .SetProperty(h => h.Version, h => h.Version + 1));
+        }
+
+        var expiring = await _db.SeatHolds
+            .Where(h => h.Status == HoldStatus.Held)
+            .ToListAsync();
+
+        var expiredCount = 0;
+        foreach (var hold in expiring.Where(h => h.ExpiresAt <= now))
+        {
+            hold.Status = HoldStatus.Expired;
+            hold.Version++;
+            expiredCount++;
+        }
+
+        if (expiredCount > 0)
+            await _db.SaveChangesAsync();
+
+        return expiredCount;
     }
 
     private static SeatHoldDto ToDto(SeatHold h) => new()
@@ -445,7 +503,7 @@ public class HoldService : IHoldService
         ClassId = h.ClassId,
         StudentId = h.StudentId,
         Quantity = h.Quantity,
-        Status = h.Status.ToString(),
+        Status = h.Status.ToString().ToUpperInvariant(),
         HeldAt = h.HeldAt,
         ExpiresAt = h.ExpiresAt,
         ConfirmedAt = h.ConfirmedAt,
@@ -464,5 +522,79 @@ public class HoldService : IHoldService
     private static bool IsUniqueViolation(DbUpdateException ex)
     {
         return ex.InnerException is PostgresException pg && pg.SqlState == "23505";
+    }
+
+    private async Task LockClassRowAsync(Guid classId)
+    {
+        var sql = IsPostgres()
+            ? "SELECT 1 FROM \"classes\" WHERE id = @p0 FOR UPDATE"
+            : "SELECT 1 FROM \"classes\" WHERE id = @p0";
+        await _db.Database.ExecuteSqlRawAsync(sql, classId);
+    }
+
+    private async Task LockHoldRowAsync(Guid holdId)
+    {
+        var sql = IsPostgres()
+            ? "SELECT 1 FROM \"seat_holds\" WHERE id = @p0 FOR UPDATE"
+            : "SELECT 1 FROM \"seat_holds\" WHERE id = @p0";
+        await _db.Database.ExecuteSqlRawAsync(sql, holdId);
+    }
+
+    private bool IsPostgres()
+    {
+        return _db.Database.ProviderName?.Contains("Npgsql", StringComparison.OrdinalIgnoreCase) == true;
+    }
+
+    private async Task<bool> HasActiveOrConfirmedApplicationAsync(
+        Guid classId,
+        string studentId,
+        DateTimeOffset now)
+    {
+        if (IsPostgres())
+        {
+            var hasConfirmedApplication = await _db.SeatHolds.AnyAsync(h =>
+                h.ClassId == classId
+                && h.StudentId == studentId
+                && h.Status == HoldStatus.Confirmed);
+            var hasUnexpiredHeldApplication = await _db.SeatHolds.AnyAsync(h =>
+                h.ClassId == classId
+                && h.StudentId == studentId
+                && h.Status == HoldStatus.Held
+                && h.ExpiresAt > now);
+            return hasConfirmedApplication || hasUnexpiredHeldApplication;
+        }
+
+        var studentClassHolds = await _db.SeatHolds
+            .AsNoTracking()
+            .Where(h => h.ClassId == classId && h.StudentId == studentId)
+            .Select(h => new { h.Status, h.ExpiresAt })
+            .ToListAsync();
+
+        return studentClassHolds.Any(h =>
+            h.Status == HoldStatus.Confirmed
+            || (h.Status == HoldStatus.Held && h.ExpiresAt > now));
+    }
+
+    private async Task<int> GetOccupiedSeatCountAsync(Guid classId, DateTimeOffset now)
+    {
+        if (IsPostgres())
+        {
+            return await _db.SeatHolds
+                .Where(h => h.ClassId == classId
+                    && (h.Status == HoldStatus.Confirmed
+                        || (h.Status == HoldStatus.Held && h.ExpiresAt > now)))
+                .SumAsync(h => (int?)h.Quantity) ?? 0;
+        }
+
+        var classHolds = await _db.SeatHolds
+            .AsNoTracking()
+            .Where(h => h.ClassId == classId)
+            .Select(h => new { h.Status, h.ExpiresAt, h.Quantity })
+            .ToListAsync();
+
+        return classHolds
+            .Where(h => h.Status == HoldStatus.Confirmed
+                || (h.Status == HoldStatus.Held && h.ExpiresAt > now))
+            .Sum(h => h.Quantity);
     }
 }

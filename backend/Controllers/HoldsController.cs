@@ -40,9 +40,9 @@ public class HoldsController : BaseApiController
     }
 
     [HttpDelete("{holdId:guid}")]
-    public async Task<ActionResult> Release(Guid holdId)
+    public async Task<ActionResult> CancelOrRelease(Guid holdId)
     {
-        await _holdService.ReleaseHoldAsync(holdId, StudentId);
+        await _holdService.CancelHoldAsync(holdId, StudentId, allowTerminalNoOp: true);
         return NoContent();
     }
 }
