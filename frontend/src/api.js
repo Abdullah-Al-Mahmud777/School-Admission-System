@@ -157,6 +157,7 @@ export const api = {
     }),
   getAdminMe: () => request('/auth/me'),
   getAdminClasses: () => request('/admin/classes'),
+  getAdminApplications: () => request('/admin/applications'),
   createClass: (payload) =>
     request('/admin/classes', {
       method: 'POST',

@@ -17,6 +17,7 @@ public interface IHoldService
     Task<SeatHoldDto> CancelHoldAsync(Guid holdId, string studentId);
     Task ReleaseHoldAsync(Guid holdId, string? studentId = null);
     Task<IEnumerable<UserHoldDto>> GetMyHoldsAsync(string studentId);
+    Task<IEnumerable<AdminApplicationDto>> GetAdminApplicationsAsync();
     Task<int> ExpireHoldsAsync();
 }
 
@@ -399,6 +400,33 @@ public class HoldService : IHoldService
             })
             .OrderByDescending(h => h.HeldAt)
             .ToList();
+    }
+
+    public async Task<IEnumerable<AdminApplicationDto>> GetAdminApplicationsAsync()
+    {
+        await ExpireHoldsAsync();
+
+        return await _db.SeatHolds
+            .AsNoTracking()
+            .OrderByDescending(h => h.HeldAt)
+            .Select(h => new AdminApplicationDto
+            {
+                Id = h.Id,
+                ClassId = h.ClassId,
+                StudentId = h.StudentId,
+                Quantity = h.Quantity,
+                Status = h.Status.ToString(),
+                HeldAt = h.HeldAt,
+                ExpiresAt = h.ExpiresAt,
+                ConfirmedAt = h.ConfirmedAt,
+                PaymentStatus = h.PaymentStatus.ToString(),
+                AdmissionStatus = h.AdmissionStatus.ToString(),
+                PaidAt = h.PaidAt,
+                CancelledAt = h.CancelledAt,
+                ClassName = h.Class.Name,
+                ClassShift = h.Class.Shift
+            })
+            .ToListAsync();
     }
 
     public async Task<int> ExpireHoldsAsync()

@@ -10,7 +10,7 @@ const NAV_ITEMS = [
     isActive: (path) =>
       path === '/admin' ||
       path === '/admin/dashboard' ||
-      !['/admin/classes', '/admin/seats'].includes(path),
+      !['/admin/classes', '/admin/applications', '/admin/seats'].includes(path),
     icon: (
       <svg className="nav-icon" viewBox="0 0 20 20" fill="none" aria-hidden="true">
         <rect x="2.5" y="2.5" width="6" height="6" rx="1.5" stroke="currentColor" strokeWidth="1.6" />
@@ -29,6 +29,18 @@ const NAV_ITEMS = [
         <rect x="2.5" y="4" width="15" height="13" rx="2" stroke="currentColor" strokeWidth="1.6" />
         <path d="M2.5 8 H17.5 M6.5 4 V2.5 M13.5 4 V2.5" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
         <path d="M6 11.5 H9 M6 14 H12" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
+      </svg>
+    ),
+  },
+  {
+    label: 'Applications',
+    path: '/admin/applications',
+    isActive: (path) => path === '/admin/applications',
+    icon: (
+      <svg className="nav-icon" viewBox="0 0 20 20" fill="none" aria-hidden="true">
+        <path d="M6 3.5 H14 A1.5 1.5 0 0 1 15.5 5 V16.5 H4.5 V5 A1.5 1.5 0 0 1 6 3.5 Z" stroke="currentColor" strokeWidth="1.6" strokeLinejoin="round" />
+        <path d="M7.5 2.5 H12.5 V5 H7.5 Z" stroke="currentColor" strokeWidth="1.6" strokeLinejoin="round" />
+        <path d="M7.5 9.5 L9.2 11.2 L12.8 7.6" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
       </svg>
     ),
   },

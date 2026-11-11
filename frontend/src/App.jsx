@@ -5,6 +5,7 @@ import AdminLogin from './components/AdminLogin';
 import AdminLayout from './components/AdminLayout';
 import AdminDashboard from './components/AdminDashboard';
 import AdminClassManagement from './components/AdminClassManagement';
+import AdminApplications from './components/AdminApplications';
 import AdminSeatManagement from './components/AdminSeatManagement';
 import {
   api,
@@ -17,7 +18,7 @@ import './App.css'
 
 const ADMIN_DASHBOARD = '/admin/dashboard';
 const ADMIN_LOGIN = '/admin/login';
-const ADMIN_PAGES = ['/admin/dashboard', '/admin/classes', '/admin/seats'];
+const ADMIN_PAGES = ['/admin/dashboard', '/admin/classes', '/admin/applications', '/admin/seats'];
 
 function currentPath() {
   return window.location.pathname.replace(/\/+$/, '') || '/';
@@ -113,6 +114,8 @@ function App() {
 
     if (path === '/admin/classes') {
       adminPage = <AdminClassManagement onSignOut={handleAdminSignOut} />;
+    } else if (path === '/admin/applications') {
+      adminPage = <AdminApplications />;
     } else if (path === '/admin/seats') {
       adminPage = <AdminSeatManagement onNavigate={navigate} />;
     }

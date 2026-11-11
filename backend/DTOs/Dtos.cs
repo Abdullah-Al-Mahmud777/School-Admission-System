@@ -94,3 +94,9 @@ public class UserHoldDto : SeatHoldDto
 {
     public string? ClassName { get; set; }
 }
+
+public class AdminApplicationDto : SeatHoldDto
+{
+    public string ClassName { get; set; } = string.Empty;
+    public string ClassShift { get; set; } = string.Empty;
+}
